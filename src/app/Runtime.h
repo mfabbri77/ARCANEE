@@ -15,6 +15,7 @@
 
 #include "platform/Window.h"
 #include "render/CBufPresets.h"
+#include "render/Canvas2D.h"
 #include "render/Framebuffer.h"
 #include "render/PresentPass.h"
 #include "render/RenderDevice.h"
@@ -58,6 +59,7 @@ private:
   // Rendering (Phase 3.2-3.3)
   std::unique_ptr<render::Framebuffer> m_cbuf;
   std::unique_ptr<render::PresentPass> m_presentPass;
+  std::unique_ptr<render::Canvas2D> m_canvas2d;
   render::CBufPreset m_cbufPreset = render::CBufPreset::Medium_16_9;
 
   std::unique_ptr<runtime::Cartridge> m_cartridge;

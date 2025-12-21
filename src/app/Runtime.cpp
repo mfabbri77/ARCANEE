@@ -17,6 +17,7 @@
 #include "render/RenderDevice.h"
 #include <SDL2/SDL.h>
 #include <algorithm>
+#include <cmath>
 
 namespace arcanee::app {
 
@@ -88,6 +89,15 @@ void Runtime::initSubsystems() {
   m_presentPass = std::make_unique<render::PresentPass>();
   if (!m_presentPass->initialize(*m_renderDevice)) {
     LOG_ERROR("Failed to initialize PresentPass");
+    m_isRunning = false;
+    return;
+  }
+
+  // 5d. Create Canvas2D (Phase 4.1 - ThorVG)
+  m_canvas2d = std::make_unique<render::Canvas2D>();
+  if (!m_canvas2d->initialize(*m_renderDevice, cbufDims.width,
+                              cbufDims.height)) {
+    LOG_ERROR("Failed to initialize Canvas2D");
     m_isRunning = false;
     return;
   }
@@ -196,24 +206,52 @@ void Runtime::update(f64 dt) {
 }
 
 void Runtime::draw(f64 alpha) {
-  // 1. Clear CBUF to a test color (magenta for visibility)
+  // 1. Clear CBUF to black (letterbox color)
   if (m_cbuf && m_renderDevice) {
-    m_cbuf->clear(m_renderDevice->getContext(), 0.8f, 0.2f, 0.6f, 1.0f);
+    m_cbuf->clear(m_renderDevice->getContext(), 0.0f, 0.0f, 0.0f, 1.0f);
   }
 
-  // 2. (Future) Run cartridge draw
+  // 2. Canvas2D rendering (ThorVG)
+  if (m_canvas2d && m_canvas2d->isValid()) {
+    m_canvas2d->beginFrame();
+
+    // Clear canvas to dark blue background
+    m_canvas2d->clear(0xFF1a1a2e);
+
+    // Draw test graphics: colorful rectangles
+    m_canvas2d->setFillColor(0xFFe94560); // Red
+    m_canvas2d->fillRect(100, 100, 200, 150);
+
+    m_canvas2d->setFillColor(0xFF16213e); // Dark blue
+    m_canvas2d->fillRect(350, 100, 200, 150);
+
+    m_canvas2d->setFillColor(0xFF0f3460); // Navy
+    m_canvas2d->fillRect(600, 100, 200, 150);
+
+    // Draw animated rectangle based on time
+    static float animTime = 0.0f;
+    animTime += 0.016f; // ~60fps
+    float offset = sinf(animTime * 2.0f) * 50.0f;
+    m_canvas2d->setFillColor(0xFFe94560); // Coral
+    m_canvas2d->fillRect(380 + offset, 300, 200, 100);
+
+    m_canvas2d->endFrame(*m_renderDevice);
+  }
+
+  // 3. (Future) Run cartridge draw
   if (m_cartridge) {
     m_cartridge->draw(alpha);
   }
 
-  // 3. Present CBUF to backbuffer
-  if (m_presentPass && m_cbuf && m_cbuf->isValid()) {
-    m_presentPass->execute(*m_renderDevice, m_cbuf->getShaderResourceView(),
-                           m_cbuf->getWidth(), m_cbuf->getHeight(),
+  // 4. Present Canvas2D to backbuffer (through CBUF)
+  // For now we present the Canvas2D texture directly
+  if (m_presentPass && m_canvas2d && m_canvas2d->isValid()) {
+    m_presentPass->execute(*m_renderDevice, m_canvas2d->getShaderResourceView(),
+                           m_canvas2d->getWidth(), m_canvas2d->getHeight(),
                            render::PresentMode::Fit);
   }
 
-  // 4. Present swapchain
+  // 5. Present swapchain
   if (m_renderDevice) {
     m_renderDevice->present();
   }

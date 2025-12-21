@@ -43,6 +43,7 @@ set(RENDER_SOURCES
     render/RenderDevice.cpp
     render/Framebuffer.cpp
     render/PresentPass.cpp
+    render/Canvas2D.cpp
 )
 
 set(APP_SOURCES
@@ -83,6 +84,7 @@ target_link_libraries(arcanee PRIVATE
     Diligent-GraphicsEngineVk-static
     Diligent-GraphicsEngineOpenGL-static
     Diligent-GraphicsTools
+    thorvg_static
 )
 
 # Compilation features
