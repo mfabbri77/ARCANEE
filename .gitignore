@@ -2,4 +2,6 @@ build/
 .vscode/
 .DS_Store
 *.user
-unknown/
+.cache/
+*.log
+
