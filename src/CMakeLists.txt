@@ -47,12 +47,16 @@ set(RENDER_SOURCES
     render/Canvas2D.cpp
 )
 
+set(AUDIO_SOURCES
+    audio/AudioDevice.cpp
+    audio/ModulePlayer.cpp
+)
+
 set(APP_SOURCES
     app/main.cpp
     app/Runtime.cpp
 )
 
-# Define the main executable
 add_executable(arcanee
     ${APP_SOURCES}
     ${PLATFORM_SOURCES}
@@ -60,6 +64,7 @@ add_executable(arcanee
     ${RUNTIME_SOURCES}
     ${SCRIPT_SOURCES}
     ${RENDER_SOURCES}
+    ${AUDIO_SOURCES}
 )
 
 # Include directories
@@ -69,6 +74,7 @@ target_include_directories(arcanee PRIVATE
     "${squirrel_SOURCE_DIR}/include"
     ${SDL2_INCLUDE_DIRS}
     ${PHYSFS_INCLUDE_DIRS}
+    ${LIBOPENMPT_INCLUDE_DIRS}
 )
 
 # DiligentCore as SYSTEM to suppress warnings from their headers
@@ -86,10 +92,16 @@ target_link_libraries(arcanee PRIVATE
     Diligent-GraphicsEngineOpenGL-static
     Diligent-GraphicsTools
     thorvg_static
+    ${LIBOPENMPT_LIBRARIES}
 )
 
 # Compilation features
 target_compile_features(arcanee PRIVATE cxx_std_17)
+
+# Optional feature defines
+if(LIBOPENMPT_FOUND)
+    target_compile_definitions(arcanee PRIVATE HAS_LIBOPENMPT)
+endif()
 
 # Warnings
 if(MSVC)

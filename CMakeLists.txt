@@ -27,6 +27,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
 # Find required packages
+find_package(PkgConfig REQUIRED)
 find_package(SDL2 REQUIRED)
 find_package(PhysFS REQUIRED)
 
@@ -75,6 +76,12 @@ FetchContent_Declare(
 FetchContent_GetProperties(thorvg)
 if(NOT thorvg_POPULATED)
     FetchContent_Populate(thorvg)
+endif()
+
+# libopenmpt - Tracker Module Player (system library via pkg-config)
+pkg_check_modules(LIBOPENMPT libopenmpt)
+if(NOT LIBOPENMPT_FOUND)
+    message(WARNING "libopenmpt not found. Install libopenmpt-dev for audio module support.")
 endif()
 
 # Build ThorVG as static library from source
