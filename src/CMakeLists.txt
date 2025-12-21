@@ -37,6 +37,7 @@ set(SCRIPT_SOURCES
     script/ScriptEngine.cpp
     script/api/SysBinding.cpp
     script/api/FsBinding.cpp
+    script/api/GfxBinding.cpp
 )
 
 set(RENDER_SOURCES

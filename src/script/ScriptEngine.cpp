@@ -12,6 +12,7 @@
 
 #include "ScriptEngine.h"
 #include "api/FsBinding.h"
+#include "api/GfxBinding.h"
 #include "api/SysBinding.h"
 #include "common/Assert.h"
 #include "common/Log.h"
@@ -195,7 +196,7 @@ void ScriptEngine::registerStandardLibraries() {
 void ScriptEngine::registerArcaneeApi() {
   api::RegisterSysBinding(m_vm);
   api::RegisterFsBinding(m_vm);
-  api::RegisterFsBinding(m_vm);
+  registerGfxBinding(m_vm); // gfx.* table
 }
 
 void ScriptEngine::setWatchdog(bool enable, f64 timeoutSec) {

@@ -2,6 +2,7 @@
 #include "RenderDevice.h"
 #include "common/Log.h"
 
+#include <cmath>
 #include <cstring>
 #include <thorvg.h>
 
@@ -16,8 +17,11 @@ namespace arcanee::render {
 using namespace Diligent;
 
 struct Canvas2D::Impl {
-  // ThorVG
+  // ThorVG canvas
   std::unique_ptr<tvg::SwCanvas> canvas;
+
+  // Current path being built
+  std::unique_ptr<tvg::Shape> currentPath;
 
   // CPU buffer (32bpp ARGB)
   std::vector<u32> cpuBuffer;
@@ -25,16 +29,22 @@ struct Canvas2D::Impl {
   // GPU texture for upload
   RefCntAutoPtr<ITexture> pTexture;
   ITextureView *pSRV = nullptr;
-
-  // Current shapes for drawing
-  tvg::Shape *currentRect = nullptr;
 };
+
+// Helper to extract ARGB color components
+static void colorToRGBA(u32 color, u8 &r, u8 &g, u8 &b, u8 &a) {
+  a = (color >> 24) & 0xFF;
+  r = (color >> 16) & 0xFF;
+  g = (color >> 8) & 0xFF;
+  b = color & 0xFF;
+}
 
 Canvas2D::Canvas2D() : m_impl(new Impl()) {}
 
 Canvas2D::~Canvas2D() {
   if (m_impl) {
     m_impl->canvas.reset();
+    m_impl->currentPath.reset();
     tvg::Initializer::term(tvg::CanvasEngine::Sw);
     delete m_impl;
     m_impl = nullptr;
@@ -42,7 +52,6 @@ Canvas2D::~Canvas2D() {
 }
 
 bool Canvas2D::initialize(RenderDevice &device, u32 width, u32 height) {
-  // Initialize ThorVG
   if (tvg::Initializer::init(tvg::CanvasEngine::Sw, 0) !=
       tvg::Result::Success) {
     LOG_ERROR("Canvas2D: Failed to initialize ThorVG");
@@ -52,22 +61,18 @@ bool Canvas2D::initialize(RenderDevice &device, u32 width, u32 height) {
   m_width = width;
   m_height = height;
 
-  // Create CPU buffer
   m_impl->cpuBuffer.resize(width * height);
   std::memset(m_impl->cpuBuffer.data(), 0, width * height * sizeof(u32));
 
-  // Create ThorVG software canvas
   m_impl->canvas = tvg::SwCanvas::gen();
   if (!m_impl->canvas) {
     LOG_ERROR("Canvas2D: Failed to create ThorVG canvas");
     return false;
   }
 
-  // Set canvas target to our CPU buffer
   m_impl->canvas->target(m_impl->cpuBuffer.data(), width, width, height,
                          tvg::SwCanvas::ARGB8888);
 
-  // Create GPU texture for upload
   auto *pDevice = static_cast<IRenderDevice *>(device.getDevice());
   if (!pDevice) {
     LOG_ERROR("Canvas2D: Invalid device");
@@ -79,8 +84,7 @@ bool Canvas2D::initialize(RenderDevice &device, u32 width, u32 height) {
   texDesc.Type = RESOURCE_DIM_TEX_2D;
   texDesc.Width = width;
   texDesc.Height = height;
-  texDesc.Format =
-      TEX_FORMAT_BGRA8_UNORM; // ThorVG outputs ARGB, but we'll handle swizzle
+  texDesc.Format = TEX_FORMAT_BGRA8_UNORM;
   texDesc.BindFlags = BIND_SHADER_RESOURCE;
   texDesc.Usage = USAGE_DEFAULT;
   texDesc.MipLevels = 1;
@@ -99,13 +103,11 @@ bool Canvas2D::initialize(RenderDevice &device, u32 width, u32 height) {
 }
 
 bool Canvas2D::resize(RenderDevice &device, u32 width, u32 height) {
-  // Release old resources
   m_impl->canvas.reset();
   m_impl->pTexture.Release();
   m_impl->pSRV = nullptr;
   m_impl->cpuBuffer.clear();
 
-  // Reinitialize (ThorVG already initialized)
   m_width = width;
   m_height = height;
 
@@ -143,21 +145,19 @@ bool Canvas2D::resize(RenderDevice &device, u32 width, u32 height) {
 }
 
 void Canvas2D::beginFrame() {
-  // Clear canvas for new frame
   if (m_impl && m_impl->canvas) {
     m_impl->canvas->clear(true);
   }
+  m_stateStack.reset(); // Reset to default state each frame
 }
 
 void Canvas2D::endFrame(RenderDevice &device) {
   if (!m_impl || !m_impl->canvas)
     return;
 
-  // Render all queued shapes
   m_impl->canvas->draw();
   m_impl->canvas->sync();
 
-  // Upload CPU buffer to GPU texture
   auto *pContext = static_cast<IDeviceContext *>(device.getContext());
   if (!pContext || !m_impl->pTexture)
     return;
@@ -179,44 +179,235 @@ void Canvas2D::endFrame(RenderDevice &device) {
                           RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
 }
 
+// ===== Target & Clearing =====
 void Canvas2D::clear(u32 color) {
   if (!m_impl || !m_impl->canvas)
     return;
 
-  // Fill canvas with solid color using a rect
   auto bg = tvg::Shape::gen();
   bg->appendRect(0, 0, static_cast<float>(m_width),
                  static_cast<float>(m_height));
 
-  // Extract ARGB components
-  u8 a = (color >> 24) & 0xFF;
-  u8 r = (color >> 16) & 0xFF;
-  u8 g = (color >> 8) & 0xFF;
-  u8 b = color & 0xFF;
-
+  u8 r, g, b, a;
+  colorToRGBA(color, r, g, b, a);
   bg->fill(r, g, b, a);
   m_impl->canvas->push(std::move(bg));
+}
+
+// ===== State Stack =====
+void Canvas2D::save() { m_stateStack.save(); }
+
+void Canvas2D::restore() { m_stateStack.restore(); }
+
+// ===== Transforms =====
+void Canvas2D::resetTransform() {
+  m_stateStack.current().transform = Transform2D::identity();
+}
+
+void Canvas2D::setTransform(f32 a, f32 b, f32 c, f32 d, f32 e, f32 f) {
+  m_stateStack.current().transform = {a, b, c, d, e, f};
+}
+
+void Canvas2D::translate(f32 x, f32 y) {
+  m_stateStack.current().transform.translate(x, y);
+}
+
+void Canvas2D::rotate(f32 radians) {
+  m_stateStack.current().transform.rotate(radians);
+}
+
+void Canvas2D::scale(f32 sx, f32 sy) {
+  m_stateStack.current().transform.scale(sx, sy);
+}
+
+// ===== Global State =====
+void Canvas2D::setGlobalAlpha(f32 alpha) {
+  m_stateStack.current().globalAlpha = std::max(0.0f, std::min(1.0f, alpha));
+}
+
+void Canvas2D::setBlendMode(BlendMode mode) {
+  m_stateStack.current().blendMode = mode;
+}
+
+// ===== Styles =====
+void Canvas2D::setFillColor(u32 color) {
+  m_stateStack.current().fillColor = color;
+}
+
+void Canvas2D::setStrokeColor(u32 color) {
+  m_stateStack.current().strokeColor = color;
+}
+
+void Canvas2D::setLineWidth(f32 width) {
+  m_stateStack.current().lineWidth = width;
+}
+
+void Canvas2D::setLineJoin(LineJoin join) {
+  m_stateStack.current().lineJoin = join;
+}
+
+void Canvas2D::setLineCap(LineCap cap) { m_stateStack.current().lineCap = cap; }
+
+void Canvas2D::setMiterLimit(f32 limit) {
+  m_stateStack.current().miterLimit = limit;
+}
+
+// ===== Paths =====
+void Canvas2D::beginPath() { m_impl->currentPath = tvg::Shape::gen(); }
+
+void Canvas2D::closePath() {
+  if (m_impl->currentPath) {
+    m_impl->currentPath->close();
+  }
+}
+
+void Canvas2D::moveTo(f32 x, f32 y) {
+  if (m_impl->currentPath) {
+    m_impl->currentPath->moveTo(x, y);
+  }
+}
+
+void Canvas2D::lineTo(f32 x, f32 y) {
+  if (m_impl->currentPath) {
+    m_impl->currentPath->lineTo(x, y);
+  }
+}
+
+void Canvas2D::quadTo(f32 cx, f32 cy, f32 x, f32 y) {
+  if (m_impl->currentPath) {
+    // ThorVG doesn't have quadTo directly, approximate with cubic
+    // This is a simplification - proper implementation would use control points
+    m_impl->currentPath->cubicTo(cx, cy, cx, cy, x, y);
+  }
+}
+
+void Canvas2D::cubicTo(f32 c1x, f32 c1y, f32 c2x, f32 c2y, f32 x, f32 y) {
+  if (m_impl->currentPath) {
+    m_impl->currentPath->cubicTo(c1x, c1y, c2x, c2y, x, y);
+  }
+}
+
+void Canvas2D::arc(f32 x, f32 y, f32 r, f32 startAngle, f32 endAngle,
+                   bool /*ccw*/) {
+  if (m_impl->currentPath) {
+    // ThorVG appendArc is deprecated in v0.15
+    // For now, use appendCircle for full circles, or approximate arcs
+    // TODO: Implement proper arc using path commands
+    (void)startAngle;
+    (void)endAngle;
+    m_impl->currentPath->appendCircle(x, y, r, r);
+  }
+}
+
+void Canvas2D::rect(f32 x, f32 y, f32 w, f32 h) {
+  if (m_impl->currentPath) {
+    m_impl->currentPath->appendRect(x, y, w, h);
+  }
+}
+
+// ===== Drawing =====
+void Canvas2D::fill() {
+  if (!m_impl || !m_impl->canvas || !m_impl->currentPath)
+    return;
+
+  const auto &state = m_stateStack.current();
+  u8 r, g, b, a;
+  colorToRGBA(state.fillColor, r, g, b, a);
+  a = static_cast<u8>(a * state.globalAlpha);
+
+  m_impl->currentPath->fill(r, g, b, a);
+  m_impl->canvas->push(std::move(m_impl->currentPath));
+  m_impl->currentPath = nullptr;
+}
+
+void Canvas2D::stroke() {
+  if (!m_impl || !m_impl->canvas || !m_impl->currentPath)
+    return;
+
+  const auto &state = m_stateStack.current();
+  u8 r, g, b, a;
+  colorToRGBA(state.strokeColor, r, g, b, a);
+  a = static_cast<u8>(a * state.globalAlpha);
+
+  m_impl->currentPath->stroke(r, g, b, a);
+  m_impl->currentPath->stroke(state.lineWidth);
+
+  // Set stroke cap
+  tvg::StrokeCap cap = tvg::StrokeCap::Butt;
+  switch (state.lineCap) {
+  case LineCap::Round:
+    cap = tvg::StrokeCap::Round;
+    break;
+  case LineCap::Square:
+    cap = tvg::StrokeCap::Square;
+    break;
+  default:
+    break;
+  }
+  m_impl->currentPath->stroke(cap);
+
+  // Set stroke join
+  tvg::StrokeJoin join = tvg::StrokeJoin::Miter;
+  switch (state.lineJoin) {
+  case LineJoin::Round:
+    join = tvg::StrokeJoin::Round;
+    break;
+  case LineJoin::Bevel:
+    join = tvg::StrokeJoin::Bevel;
+    break;
+  default:
+    break;
+  }
+  m_impl->currentPath->stroke(join);
+
+  m_impl->canvas->push(std::move(m_impl->currentPath));
+  m_impl->currentPath = nullptr;
 }
 
 void Canvas2D::fillRect(f32 x, f32 y, f32 w, f32 h) {
   if (!m_impl || !m_impl->canvas)
     return;
 
-  auto rect = tvg::Shape::gen();
-  rect->appendRect(x, y, w, h);
+  const auto &state = m_stateStack.current();
+  auto shape = tvg::Shape::gen();
+  shape->appendRect(x, y, w, h);
 
-  // Extract fill color ARGB
-  u8 a = (m_fillColor >> 24) & 0xFF;
-  u8 r = (m_fillColor >> 16) & 0xFF;
-  u8 g = (m_fillColor >> 8) & 0xFF;
-  u8 b = m_fillColor & 0xFF;
+  u8 r, g, b, a;
+  colorToRGBA(state.fillColor, r, g, b, a);
+  a = static_cast<u8>(a * state.globalAlpha);
 
-  rect->fill(r, g, b, a);
-  m_impl->canvas->push(std::move(rect));
+  shape->fill(r, g, b, a);
+  m_impl->canvas->push(std::move(shape));
 }
 
-void Canvas2D::setFillColor(u32 color) { m_fillColor = color; }
+void Canvas2D::strokeRect(f32 x, f32 y, f32 w, f32 h) {
+  if (!m_impl || !m_impl->canvas)
+    return;
 
+  const auto &state = m_stateStack.current();
+  auto shape = tvg::Shape::gen();
+  shape->appendRect(x, y, w, h);
+
+  u8 r, g, b, a;
+  colorToRGBA(state.strokeColor, r, g, b, a);
+  a = static_cast<u8>(a * state.globalAlpha);
+
+  shape->stroke(r, g, b, a);
+  shape->stroke(state.lineWidth);
+  m_impl->canvas->push(std::move(shape));
+}
+
+void Canvas2D::clearRect(f32 x, f32 y, f32 w, f32 h) {
+  if (!m_impl || !m_impl->canvas)
+    return;
+
+  auto shape = tvg::Shape::gen();
+  shape->appendRect(x, y, w, h);
+  shape->fill(0, 0, 0, 0); // Transparent
+  m_impl->canvas->push(std::move(shape));
+}
+
+// ===== GPU Interface =====
 void *Canvas2D::getShaderResourceView() {
   return m_impl ? m_impl->pSRV : nullptr;
 }
