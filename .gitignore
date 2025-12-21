@@ -1,33 +1,5 @@
-# Build directories
 build/
-bin/
-out/
-
-# Object files
-*.o
-*.obj
-
-# Libraries
-*.a
-*.lib
-*.so
-*.dll
-*.dylib
-
-# Editor directories
-
-.idea/
-*.swp
-*.swo
-.DS_Store
-
-# Temporary files
-tmp/
-*.log
-
-# C++ Language Server / IDE
-.cache/
 .vscode/
-compile_commands.json
-.clangd/
-
+.DS_Store
+*.user
+unknown/

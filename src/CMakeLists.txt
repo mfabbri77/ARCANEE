@@ -33,6 +33,15 @@ set(PLATFORM_SOURCES
     platform/Window.cpp
 )
 
+set(SCRIPT_SOURCES
+    script/ScriptEngine.cpp
+    script/ScriptEngine.h
+    script/api/SysBinding.cpp
+    script/api/SysBinding.h
+    script/api/FsBinding.cpp
+    script/api/FsBinding.h
+)
+
 set(APP_SOURCES
     app/main.cpp
     app/Runtime.cpp
@@ -44,12 +53,14 @@ add_executable(arcanee
     ${PLATFORM_SOURCES}
     ${VFS_SOURCES}
     ${RUNTIME_SOURCES}
+    ${SCRIPT_SOURCES}
 )
 
 # Include directories
 target_include_directories(arcanee PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_BINARY_DIR}/generated"
+    "${squirrel_SOURCE_DIR}/include"
     ${SDL2_INCLUDE_DIRS}
     ${PHYSFS_INCLUDE_DIRS}
 )
@@ -58,6 +69,8 @@ target_include_directories(arcanee PRIVATE
 target_link_libraries(arcanee PRIVATE
     ${SDL2_LIBRARIES}
     ${PHYSFS_LIBRARIES}
+    squirrel_static
+    sqstdlib_static
 )
 
 # Compilation features

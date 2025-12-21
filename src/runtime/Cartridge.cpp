@@ -11,6 +11,9 @@
  */
 
 #include "Cartridge.h"
+#include "common/Assert.h"
+#include "common/Log.h"
+#include "platform/Time.h"
 
 namespace arcanee::runtime {
 
@@ -80,6 +83,124 @@ void getCbufDimensions(CartridgeConfig::Display::Aspect aspect,
       break;
     }
   }
+}
+
+// ============================================================================
+// Cartridge Implementation
+// ============================================================================
+
+Cartridge::Cartridge(vfs::IVfs *vfs, script::ScriptEngine *engine)
+    : m_vfs(vfs), m_scriptEngine(engine) {
+  ARCANEE_ASSERT(m_vfs != nullptr, "VFS cannot be null");
+  ARCANEE_ASSERT(m_scriptEngine != nullptr, "ScriptEngine cannot be null");
+
+  // Enable watchdog for hang protection (500ms limit)
+  m_scriptEngine->setWatchdog(true, 0.5);
+}
+
+Cartridge::~Cartridge() { unload(); }
+
+bool Cartridge::load(const std::string &fsPath) {
+  LOG_INFO("Loading cartridge from: %s", fsPath.c_str());
+
+  if (m_state != CartridgeState::Unloaded) {
+    unload(); // Ensure clean state
+  }
+
+  transition(CartridgeState::Loading);
+
+  // 1. Initialize VFS for this cartridge
+  vfs::VfsConfig vfsConfig;
+  vfsConfig.cartridgePath = fsPath;
+  vfsConfig.cartridgeId = "unknown"; // TODO: Read ID from manifest properly
+
+  if (!m_vfs->init(vfsConfig)) {
+    LOG_ERROR("Failed to mount VFS for cartridge: %s", fsPath.c_str());
+    transition(CartridgeState::Faulted);
+    return false;
+  }
+
+  // TODO: Read manifest.toml here to populate m_config
+  // For now we assume defaults and entry point "main.nut"
+
+  // 2. Initialize ScriptEngine with the VFS reference
+  script::ScriptEngine::ScriptConfig scriptConfig;
+  scriptConfig.debugInfo = true; // Enable debug info by default
+  if (!m_scriptEngine->initialize(m_vfs, scriptConfig)) {
+    LOG_ERROR("Failed to initialize ScriptEngine");
+    transition(CartridgeState::Faulted);
+    return false;
+  }
+
+  // 3. Compile/Execute entry script
+  std::string entryPath = "cart:/" + m_config.entry;
+  LOG_INFO("Executing entry script: %s", entryPath.c_str());
+
+  if (!m_scriptEngine->executeScript(entryPath)) {
+    LOG_ERROR("Failed to execute entry script");
+    transition(CartridgeState::Faulted);
+    return false;
+  }
+
+  // 4. Call init() if exists (it MUST exist per spec)
+  // For V0.1 we might want to make it optional if not strict yet, but spec says
+  // mandatory We'll trust the script engine has set up the VM state. NOTE:
+  // init() is called by us here? or does executeScript run global scope which
+  // defines init/update/draw? executeScript runs global scope. init() is a
+  // function *defined* there. We must call it now.
+
+  // 4. Call init() if exists
+  m_scriptEngine->callInit();
+
+  transition(CartridgeState::Initialized);
+
+  // Auto-start for now
+  transition(CartridgeState::Running);
+
+  return true;
+}
+
+void Cartridge::unload() {
+  if (m_state == CartridgeState::Unloaded)
+    return;
+
+  LOG_INFO("Unloading cartridge");
+
+  // Stop VM
+  m_scriptEngine->shutdown();
+
+  // Unmount VFS
+  m_vfs->shutdown();
+
+  transition(CartridgeState::Unloaded);
+}
+
+void Cartridge::update(double dt) {
+  if (m_state == CartridgeState::Running) {
+    // TODO wrap in try-catch if using C++ exceptions for script errors
+    double start = platform::Time::now();
+    m_scriptEngine->callUpdate(dt);
+    double elapsed = platform::Time::now() - start;
+    if (elapsed > 0.016) { // 16ms budget
+      LOG_WARN("Performance Warning: update() took %.2fms (Budget: 16.00ms)",
+               elapsed * 1000.0);
+    }
+  }
+}
+
+void Cartridge::draw(double alpha) {
+  if (m_state == CartridgeState::Running || m_state == CartridgeState::Paused) {
+    m_scriptEngine->callDraw(alpha);
+  }
+}
+
+void Cartridge::transition(CartridgeState newState) {
+  if (m_state == newState)
+    return;
+
+  LOG_INFO("Cartridge State: %s -> %s", cartridgeStateToString(m_state),
+           cartridgeStateToString(newState));
+  m_state = newState;
 }
 
 } // namespace arcanee::runtime

@@ -21,6 +21,7 @@
 #include "common/Log.h"
 #include "common/Version.h"
 #include "platform/Platform.h"
+#include <string>
 
 int main(int argc, char *argv[]) {
   (void)argc;
@@ -44,7 +45,7 @@ int main(int argc, char *argv[]) {
   int exitCode = 0;
   {
     arcanee::app::Runtime runtime;
-    exitCode = runtime.Run();
+    exitCode = runtime.run();
   }
 
   // Shutdown platform layer

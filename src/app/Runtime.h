@@ -11,15 +11,12 @@
  *
  * @file Runtime.h
  * @brief ARCANEE main runtime orchestration.
- *
- * The Runtime class manages the main loop with fixed timestep updates,
- * subsystem initialization, and cartridge lifecycle.
- *
- * @ref specs/Chapter 2 §2.3.3
- *      "Reference Implementation (Normative Pseudocode)"
  */
 
 #include "platform/Window.h"
+#include "runtime/Cartridge.h"
+#include "script/ScriptEngine.h"
+#include "vfs/Vfs.h"
 #include <memory>
 
 namespace arcanee::app {
@@ -30,7 +27,7 @@ namespace arcanee::app {
  * Manages:
  * - Main loop with fixed timestep (§2.3.3)
  * - Subsystem initialization/shutdown
- * - Cartridge lifecycle (future)
+ * - Cartridge lifecycle
  */
 class Runtime {
 public:
@@ -39,44 +36,25 @@ public:
 
   /**
    * @brief Run the main loop until exit.
-   *
    * @return Exit code (0 = success).
-   *
-   * @ref specs/Chapter 2 §2.3
-   *      "Main loop phases: Event Pump → Input Snapshot → Fixed Update →
-   * Draw."
    */
-  int Run();
+  int run();
 
 private:
-  void InitSubsystems();
-  void ShutdownSubsystems();
+  void initSubsystems();
+  void shutdownSubsystems();
 
-  /**
-   * @brief Fixed timestep update.
-   *
-   * @param dt Fixed delta time in seconds.
-   *
-   * @ref specs/Chapter 2 §2.3.3
-   *      "const double dt_fixed = 1.0 / 60.0; // 16.67ms"
-   */
-  void Update(double dt);
-
-  /**
-   * @brief Draw/render frame.
-   *
-   * @param alpha Interpolation factor for smooth rendering.
-   *
-   * @ref specs/Chapter 2 §2.3.3
-   *      "double alpha = accumulator / dt_fixed;"
-   */
-  void Draw(double alpha);
+  void update(f64 dt);
+  void draw(f64 alpha);
 
   // Subsystems
   std::unique_ptr<platform::Window> m_window;
+  std::unique_ptr<vfs::IVfs> m_vfs;
+  std::unique_ptr<script::ScriptEngine> m_scriptEngine;
+  std::unique_ptr<runtime::Cartridge> m_cartridge;
 
   // State
-  bool m_running = true;
+  bool m_isRunning = false;
 };
 
 } // namespace arcanee::app

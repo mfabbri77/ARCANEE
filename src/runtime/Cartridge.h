@@ -12,6 +12,8 @@
  * @file Cartridge.h
  */
 
+#include "script/ScriptEngine.h"
+#include "vfs/Vfs.h"
 #include <string>
 
 namespace arcanee::runtime {
@@ -36,7 +38,7 @@ struct CartridgeConfig {
   std::string title;
   std::string version;
   std::string apiVersion;
-  std::string entry; // Entry script path (e.g., "main.nut")
+  std::string entry = "main.nut"; // Entry script path (default: main.nut)
 
   // Display settings (§3.4.2)
   struct Display {
@@ -72,5 +74,56 @@ struct CartridgeConfig {
 void getCbufDimensions(CartridgeConfig::Display::Aspect aspect,
                        CartridgeConfig::Display::Preset preset, int &outWidth,
                        int &outHeight);
+
+/**
+ * @brief Manages the lifecycle of a single cartridge instance.
+ */
+class Cartridge {
+public:
+  Cartridge(vfs::IVfs *vfs, script::ScriptEngine *engine);
+  ~Cartridge();
+
+  /**
+   * @brief Load a cartridge from the given path (directory or archive).
+   *
+   * Transitions: Unloaded -> Loading -> Initialized (on success) or Faulted (on
+   * error).
+   */
+  bool load(const std::string &fsPath);
+
+  /**
+   * @brief Unload the current cartridge.
+   *
+   * Transitions: Any -> Unloaded.
+   */
+  void unload();
+
+  /**
+   * @brief Update the cartridge state.
+   *
+   * Should be called once per fixed timestep.
+   * Only calls script update() if in Running state.
+   */
+  void update(double dt);
+
+  /**
+   * @brief Draw the cartridge content.
+   *
+   * Should be called once per frame.
+   * Only calls script draw() if in Running state (or Paused if allowed).
+   */
+  void draw(double alpha);
+
+  CartridgeState getState() const { return m_state; }
+
+private:
+  void transition(CartridgeState newState);
+
+  vfs::IVfs *m_vfs;
+  script::ScriptEngine *m_scriptEngine;
+
+  CartridgeState m_state = CartridgeState::Unloaded;
+  CartridgeConfig m_config;
+};
 
 } // namespace arcanee::runtime
