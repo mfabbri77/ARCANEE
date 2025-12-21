@@ -14,10 +14,26 @@
 
 namespace arcanee {
 
+namespace detail {
+/** @brief Parse a simple positive integer at compile time. */
+constexpr int parse_int(std::string_view s) {
+  int res = 0;
+  for (char c : s) {
+    if (c < '0' || c > '9')
+      continue; // Skip non-digits (like @ placeholders before replacement)
+    res = res * 10 + (c - '0');
+  }
+  return res;
+}
+} // namespace detail
+
 constexpr std::string_view kEngineName = "@PROJECT_NAME@";
 constexpr std::string_view kEngineVersion = "@PROJECT_VERSION@";
-constexpr int kEngineVersionMajor = @PROJECT_VERSION_MAJOR @;
-constexpr int kEngineVersionMinor = @PROJECT_VERSION_MINOR @;
-constexpr int kEngineVersionPatch = @PROJECT_VERSION_PATCH @;
+constexpr int kEngineVersionMajor =
+    detail::parse_int("@PROJECT_VERSION_MAJOR@");
+constexpr int kEngineVersionMinor =
+    detail::parse_int("@PROJECT_VERSION_MINOR@");
+constexpr int kEngineVersionPatch =
+    detail::parse_int("@PROJECT_VERSION_PATCH@");
 
 } // namespace arcanee
