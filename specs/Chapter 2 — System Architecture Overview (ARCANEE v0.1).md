@@ -302,3 +302,5 @@ An implementation is compliant with Chapter 2 if:
 3. Rendering uses the CBUF → Present scaling architecture and overlays Workbench UI in display space.
 4. Worker threads are used only for non-VM tasks and communicate results via queues.
 5. Audio mixing avoids blocking operations and avoids VM/GPU access in the audio thread.
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

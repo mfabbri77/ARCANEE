@@ -994,3 +994,6 @@ An implementation is compliant with Chapter 8B if it:
 ---
 
 *End of Chapter 8B*
+
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

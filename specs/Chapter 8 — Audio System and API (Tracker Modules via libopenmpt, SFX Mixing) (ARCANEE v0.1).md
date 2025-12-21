@@ -357,3 +357,5 @@ An implementation is compliant with Chapter 8 if it:
 5. Enforces permission checks and sandboxed VFS loading for all audio assets.
 6. Provides stable command ordering and bounded command-to-audio latency.
 7. Enforces limits and reports errors via `sys.getLastError()` and Workbench diagnostics.
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

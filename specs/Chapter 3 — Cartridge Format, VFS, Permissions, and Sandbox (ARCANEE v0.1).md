@@ -437,3 +437,5 @@ An implementation is compliant with Chapter 3 if it satisfies all of the followi
 5. Normalizes paths, rejects `..`, and prevents host filesystem escape (including via symlinks in dev).
 6. Enforces quotas and reports errors via `sys.getLastError()` and Workbench diagnostics.
 7. Provides deterministic directory listing order and stable behavior across platforms.
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

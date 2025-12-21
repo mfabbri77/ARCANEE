@@ -1,13 +1,23 @@
 #pragma once
 
+/**
+ * ARCANEE - Modern Fantasy Console
+ * Copyright (C) 2025 Michele Fabbri
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ */
+
 #include <string_view>
 
 namespace arcanee {
 
 constexpr std::string_view kEngineName = "@PROJECT_NAME@";
 constexpr std::string_view kEngineVersion = "@PROJECT_VERSION@";
-constexpr int kEngineVersionMajor = @PROJECT_VERSION_MAJOR@;
-constexpr int kEngineVersionMinor = @PROJECT_VERSION_MINOR@;
-constexpr int kEngineVersionPatch = @PROJECT_VERSION_PATCH@;
+constexpr int kEngineVersionMajor = @PROJECT_VERSION_MAJOR @;
+constexpr int kEngineVersionMinor = @PROJECT_VERSION_MINOR @;
+constexpr int kEngineVersionPatch = @PROJECT_VERSION_PATCH @;
 
 } // namespace arcanee

@@ -358,3 +358,6 @@ Appendix D is primarily recommended architecture. An implementation “conforms�
 * It respects the normative threading and ownership constraints identified above.
 * It maintains sandbox boundaries and does not leak host paths.
 * It can run the reference cartridges and pass the conformance tests.
+
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

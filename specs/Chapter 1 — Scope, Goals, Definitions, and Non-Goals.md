@@ -226,3 +226,6 @@ The remainder of this specification is organized into chapters intended to be re
 
 ------
 
+
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

@@ -415,3 +415,5 @@ An implementation is compliant with Chapter 7 if it:
 4. Renders the active scene into CBUF prior to 2D canvas composition and present.
 5. Enforces handle validation, sandbox constraints, and safe failure behavior.
 6. Enforces scene and resource limits to prevent runaway workloads and provides diagnostics in Workbench.
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

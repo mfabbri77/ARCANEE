@@ -453,3 +453,5 @@ An implementation is compliant with Chapter 4 if:
 6. It implements time budget enforcement per update tick and provides hang protection behavior in Workbench.
 7. It provides error reporting with canonical file/line and Workbench navigation.
 8. It supports full VM reset hot reload as the default reload mechanism.
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

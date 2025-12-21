@@ -262,3 +262,5 @@ An implementation is compliant with Chapter 11 if it:
 4. Captures compile/runtime errors with canonical file paths and clickable stack traces.
 5. Surfaces subsystem failures (VFS, graphics, audio) to Workbench and fails safely without crashing.
 6. Implements deterministic spam control policy or documents absence.
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

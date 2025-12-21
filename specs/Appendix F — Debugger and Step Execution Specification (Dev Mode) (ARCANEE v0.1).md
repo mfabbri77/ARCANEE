@@ -353,3 +353,6 @@ An implementation is compliant with Appendix F at:
 * **Level 0** if it provides pause/resume, error stack traces, and clickable file:line navigation.
 * **Level 1** if it also provides deterministic breakpoints, stepping, call stack, and locals inspection with truncation limits.
 * **Level 2** if it additionally provides a localhost-only external debug adapter with explicit enablement and session token security, and supports breakpoints/stepping/stack/variables/evaluate safely.
+
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

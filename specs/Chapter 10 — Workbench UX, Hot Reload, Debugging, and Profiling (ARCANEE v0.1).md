@@ -290,3 +290,5 @@ An implementation is compliant with Chapter 10 if it:
 4. Implements hot reload as full VM reset and surfaces errors with clickable file:line navigation.
 5. Provides a console log window and diagnostic panels (at minimum CPU timings and key render settings).
 6. Enforces Dev Mode separation from Player mode and keeps any debug adapter local-only by default.
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

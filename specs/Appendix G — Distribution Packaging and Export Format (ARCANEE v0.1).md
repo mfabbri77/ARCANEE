@@ -230,3 +230,5 @@ An implementation is compliant with Appendix G if it:
 3. Exports cartridges deterministically from Workbench, excluding `save:/` and `temp:/`.
 4. Enforces manifest permissions and disallows Dev Mode features in Player Mode by default.
 5. Validates compatibility and fails gracefully with safe error messages.
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

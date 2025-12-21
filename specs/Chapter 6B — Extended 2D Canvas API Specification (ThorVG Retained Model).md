@@ -1006,3 +1006,6 @@ An implementation is compliant with Chapter 6B if it:
 ---
 
 *End of Chapter 6B*
+
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

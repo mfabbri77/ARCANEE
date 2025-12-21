@@ -244,3 +244,6 @@ An implementation is compliant with Appendix B if:
 2. It uses SDL scancodes as canonical key codes and documents the mapping.
 3. It normalizes triggers to `[0,+1]` and applies deadzones deterministically.
 4. It rejects unsupported blend modes deterministically and sets last error.
+
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

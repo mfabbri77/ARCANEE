@@ -24,3 +24,10 @@ out/
 # Temporary files
 tmp/
 *.log
+
+# C++ Language Server / IDE
+.cache/
+.vscode/
+compile_commands.json
+.clangd/
+

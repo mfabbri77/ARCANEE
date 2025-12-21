@@ -129,7 +129,10 @@ The `specs/` directory contains complete technical specifications:
 
 ## License
 
-(License information here)
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+Copyright © 2025 Michele Fabbri.
+
+See the [LICENSE](LICENSE) file for the full license text.
 
 ## Contributing
 

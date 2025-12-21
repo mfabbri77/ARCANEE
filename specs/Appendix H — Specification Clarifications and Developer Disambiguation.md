@@ -471,3 +471,6 @@ This appendix provides clarifications, not new requirements. An implementation t
 ---
 
 *End of Appendix H*
+
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

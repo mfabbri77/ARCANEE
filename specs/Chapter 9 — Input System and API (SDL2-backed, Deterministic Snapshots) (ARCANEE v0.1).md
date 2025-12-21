@@ -295,3 +295,5 @@ An implementation is compliant with Chapter 9 if it:
 4. Converts mouse coordinates to console space using the current present viewport math, returning (-1,-1) when outside the viewport.
 5. Implements a stable standardized gamepad mapping and deterministic deadzones.
 6. Ensures input APIs are O(1), allocation-free, and safe on invalid indices.
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

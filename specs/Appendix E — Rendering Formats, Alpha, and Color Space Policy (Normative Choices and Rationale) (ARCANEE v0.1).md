@@ -263,3 +263,5 @@ An implementation is compliant with Appendix E if it:
 3. Implements a linear workflow with sRGB output encoding at the backbuffer (or shader gamma fallback).
 4. Tags textures as sRGB vs linear appropriately (color vs data textures).
 5. Provides validation tests for alpha correctness, channel ordering, and present mode filtering.
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

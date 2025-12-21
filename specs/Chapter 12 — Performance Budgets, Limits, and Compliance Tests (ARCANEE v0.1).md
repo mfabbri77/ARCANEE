@@ -273,3 +273,5 @@ An implementation is ARCANEE v0.1 conformant if it satisfies:
 * Provides stable APIs and safe failure behavior
 * Enforces budgets and provides Workbench diagnostics
 * Passes the conformance test suite defined in §12.7
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

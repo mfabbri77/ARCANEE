@@ -460,3 +460,6 @@ An implementation is compliant with Chapter 6 if it:
 ---
 
 Next: **Chapter 7 — 3D Scene API and Rendering Model (Diligent-based)** (scene graph, entities, transforms, glTF loading, materials, lights, camera, render stages, and v0.1 post effects policy).
+
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

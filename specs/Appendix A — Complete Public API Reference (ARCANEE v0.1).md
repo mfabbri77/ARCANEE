@@ -356,3 +356,6 @@ Cartridges MUST define these functions in the global environment:
 
 * APIs marked “optional” in Chapters 6–8 still appear in this appendix to preserve a stable ABI; if not implemented, they must fail safely with `UnsupportedFeature`.
 * Future versions may add new namespaces (e.g., `net.*`), but v0.1 must keep these names reserved.
+
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

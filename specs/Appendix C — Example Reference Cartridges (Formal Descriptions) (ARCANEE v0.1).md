@@ -337,3 +337,6 @@ An implementation meets Appendix C intent if:
 2. Observed behaviors match the validation checkpoints.
 3. Unsupported optional features fail safely with clear errors.
 4. The Workbench can navigate compile/runtime errors to the correct file:line for these projects.
+
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

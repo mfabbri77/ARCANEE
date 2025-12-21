@@ -831,3 +831,6 @@ An implementation is compliant with Chapter 7B if it:
 ---
 
 *End of Chapter 7B*
+
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.

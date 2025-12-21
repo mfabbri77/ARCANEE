@@ -470,3 +470,5 @@ An implementation is compliant with Chapter 5 if:
 6. It handles window resize and swapchain recreation deterministically without affecting simulation timestep.
 7. It uses 32bpp textures for CBUF and 2D surfaces and applies the preferred format policy (BGRA8 preferred, RGBA8 fallback).
 8. It documents and consistently applies a single alpha convention and color space policy.
+---
+© 2025 Michele Fabbri. Licensed under AGPL-3.0.
