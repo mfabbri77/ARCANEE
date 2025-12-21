@@ -50,6 +50,7 @@ set(RENDER_SOURCES
 set(AUDIO_SOURCES
     audio/AudioDevice.cpp
     audio/ModulePlayer.cpp
+    audio/SfxMixer.cpp
 )
 
 set(APP_SOURCES
