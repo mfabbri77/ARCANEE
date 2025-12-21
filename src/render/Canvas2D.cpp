@@ -4,7 +4,9 @@
 
 #include <cmath>
 #include <cstring>
+#include <string>
 #include <thorvg.h>
+#include <unordered_map>
 
 // Diligent includes (isolated in .cpp)
 #include "Common/interface/RefCntAutoPtr.hpp"
@@ -29,6 +31,19 @@ struct Canvas2D::Impl {
   // GPU texture for upload
   RefCntAutoPtr<ITexture> pTexture;
   ITextureView *pSRV = nullptr;
+
+  // Image resources (handle -> Picture data)
+  std::unordered_map<u32, std::unique_ptr<tvg::Picture>> images;
+  u32 nextImageHandle = 1;
+
+  // Font resources (handle -> font path + size for Text creation)
+  struct FontInfo {
+    std::string path;
+    i32 sizePx;
+  };
+  std::unordered_map<u32, FontInfo> fonts;
+  u32 nextFontHandle = 1;
+  u32 currentFontHandle = 0;
 };
 
 // Helper to extract ARGB color components
@@ -414,6 +429,188 @@ void *Canvas2D::getShaderResourceView() {
 
 bool Canvas2D::isValid() const {
   return m_impl && m_impl->canvas && m_impl->pTexture && m_impl->pSRV;
+}
+
+// ===== Images (§6.3.6) =====
+u32 Canvas2D::loadImage(const char *path) {
+  if (!m_impl || !path)
+    return 0;
+
+  auto pic = tvg::Picture::gen();
+  if (!pic)
+    return 0;
+
+  // ThorVG loads from file path - in future integrate with VFS
+  if (pic->load(path) != tvg::Result::Success) {
+    LOG_ERROR("Canvas2D: Failed to load image: %s", path);
+    return 0;
+  }
+
+  u32 handle = m_impl->nextImageHandle++;
+  m_impl->images[handle] = std::move(pic);
+  LOG_INFO("Canvas2D: Loaded image '%s' as handle %u", path, handle);
+  return handle;
+}
+
+void Canvas2D::freeImage(u32 handle) {
+  if (m_impl) {
+    m_impl->images.erase(handle);
+  }
+}
+
+bool Canvas2D::getImageSize(u32 handle, u32 &width, u32 &height) {
+  if (!m_impl)
+    return false;
+
+  auto it = m_impl->images.find(handle);
+  if (it == m_impl->images.end())
+    return false;
+
+  float w, h;
+  it->second->size(&w, &h);
+  width = static_cast<u32>(w);
+  height = static_cast<u32>(h);
+  return true;
+}
+
+void Canvas2D::drawImage(u32 handle, f32 x, f32 y) {
+  if (!m_impl || !m_impl->canvas)
+    return;
+
+  auto it = m_impl->images.find(handle);
+  if (it == m_impl->images.end())
+    return;
+
+  // Clone the picture for drawing
+  auto pic = tvg::cast<tvg::Picture>(it->second->duplicate());
+  if (!pic)
+    return;
+
+  pic->translate(x, y);
+
+  // Apply global alpha
+  const auto &state = m_stateStack.current();
+  if (state.globalAlpha < 1.0f) {
+    pic->opacity(static_cast<u8>(state.globalAlpha * 255));
+  }
+
+  m_impl->canvas->push(std::move(pic));
+}
+
+void Canvas2D::drawImageRect(u32 handle, i32 sx, i32 sy, i32 sw, i32 sh, f32 dx,
+                             f32 dy, f32 dw, f32 dh) {
+  if (!m_impl || !m_impl->canvas)
+    return;
+
+  auto it = m_impl->images.find(handle);
+  if (it == m_impl->images.end())
+    return;
+
+  // Clone and scale
+  auto pic = tvg::cast<tvg::Picture>(it->second->duplicate());
+  if (!pic)
+    return;
+
+  // Set viewport for source rect (ThorVG doesn't directly support this)
+  // For v0.1, we scale the whole image to dest rect
+  (void)sx;
+  (void)sy;
+  (void)sw;
+  (void)sh; // TODO: implement source rect
+
+  float origW, origH;
+  pic->size(&origW, &origH);
+  pic->size(dw, dh);
+  pic->translate(dx, dy);
+
+  const auto &state = m_stateStack.current();
+  if (state.globalAlpha < 1.0f) {
+    pic->opacity(static_cast<u8>(state.globalAlpha * 255));
+  }
+
+  m_impl->canvas->push(std::move(pic));
+}
+
+// ===== Text (§6.3.8) =====
+u32 Canvas2D::loadFont(const char *path, i32 sizePx) {
+  if (!m_impl || !path)
+    return 0;
+
+  // Store font info for later use with tvg::Text
+  u32 handle = m_impl->nextFontHandle++;
+  m_impl->fonts[handle] = {std::string(path), sizePx};
+  LOG_INFO("Canvas2D: Loaded font '%s' size %d as handle %u", path, sizePx,
+           handle);
+  return handle;
+}
+
+void Canvas2D::freeFont(u32 handle) {
+  if (m_impl) {
+    m_impl->fonts.erase(handle);
+    if (m_impl->currentFontHandle == handle) {
+      m_impl->currentFontHandle = 0;
+    }
+  }
+}
+
+void Canvas2D::setFont(u32 handle) {
+  if (m_impl && m_impl->fonts.count(handle)) {
+    m_impl->currentFontHandle = handle;
+  }
+}
+
+void Canvas2D::setTextAlign(TextAlign align) {
+  m_stateStack.current().textAlign = align;
+}
+
+void Canvas2D::setTextBaseline(TextBaseline baseline) {
+  m_stateStack.current().textBaseline = baseline;
+}
+
+void Canvas2D::fillText(const char *text, f32 x, f32 y) {
+  if (!m_impl || !m_impl->canvas || !text)
+    return;
+  if (m_impl->currentFontHandle == 0)
+    return;
+
+  auto it = m_impl->fonts.find(m_impl->currentFontHandle);
+  if (it == m_impl->fonts.end())
+    return;
+
+  auto txt = tvg::Text::gen();
+  if (!txt)
+    return;
+
+  // Load font into Text object
+  if (txt->font(it->second.path.c_str(),
+                static_cast<float>(it->second.sizePx)) !=
+      tvg::Result::Success) {
+    LOG_ERROR("Canvas2D: Failed to set font for text");
+    return;
+  }
+
+  txt->text(text);
+  txt->translate(x, y);
+
+  // Set fill color
+  const auto &state = m_stateStack.current();
+  u8 r, g, b, a;
+  colorToRGBA(state.fillColor, r, g, b, a);
+  txt->fill(r, g, b);
+
+  // Apply alpha via opacity
+  u8 finalAlpha = static_cast<u8>(a * state.globalAlpha);
+  if (finalAlpha < 255) {
+    txt->opacity(finalAlpha);
+  }
+
+  m_impl->canvas->push(std::move(txt));
+}
+
+void Canvas2D::strokeText(const char *text, f32 x, f32 y) {
+  // ThorVG Text doesn't directly support stroke text
+  // For v0.1, fall back to fill text
+  fillText(text, x, y);
 }
 
 } // namespace arcanee::render

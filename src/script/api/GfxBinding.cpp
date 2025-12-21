@@ -198,6 +198,80 @@ static SQInteger gfx_getTargetSize(HSQUIRRELVM vm) {
   return 2;
 }
 
+// ===== Images =====
+static SQInteger gfx_loadImage(HSQUIRRELVM vm) {
+  const SQChar *path = nullptr;
+  sq_getstring(vm, 2, &path);
+  if (g_canvas && path) {
+    u32 handle = g_canvas->loadImage(path);
+    sq_pushinteger(vm, handle);
+  } else {
+    sq_pushinteger(vm, 0);
+  }
+  return 1;
+}
+
+static SQInteger gfx_freeImage(HSQUIRRELVM vm) {
+  SQInteger handle;
+  sq_getinteger(vm, 2, &handle);
+  if (g_canvas)
+    g_canvas->freeImage(static_cast<u32>(handle));
+  return 0;
+}
+
+static SQInteger gfx_drawImage(HSQUIRRELVM vm) {
+  SQInteger handle;
+  SQFloat x, y;
+  sq_getinteger(vm, 2, &handle);
+  sq_getfloat(vm, 3, &x);
+  sq_getfloat(vm, 4, &y);
+  if (g_canvas)
+    g_canvas->drawImage(static_cast<u32>(handle), x, y);
+  return 0;
+}
+
+// ===== Text =====
+static SQInteger gfx_loadFont(HSQUIRRELVM vm) {
+  const SQChar *path = nullptr;
+  SQInteger size;
+  sq_getstring(vm, 2, &path);
+  sq_getinteger(vm, 3, &size);
+  if (g_canvas && path) {
+    u32 handle = g_canvas->loadFont(path, static_cast<i32>(size));
+    sq_pushinteger(vm, handle);
+  } else {
+    sq_pushinteger(vm, 0);
+  }
+  return 1;
+}
+
+static SQInteger gfx_freeFont(HSQUIRRELVM vm) {
+  SQInteger handle;
+  sq_getinteger(vm, 2, &handle);
+  if (g_canvas)
+    g_canvas->freeFont(static_cast<u32>(handle));
+  return 0;
+}
+
+static SQInteger gfx_setFont(HSQUIRRELVM vm) {
+  SQInteger handle;
+  sq_getinteger(vm, 2, &handle);
+  if (g_canvas)
+    g_canvas->setFont(static_cast<u32>(handle));
+  return 0;
+}
+
+static SQInteger gfx_fillText(HSQUIRRELVM vm) {
+  const SQChar *text = nullptr;
+  SQFloat x, y;
+  sq_getstring(vm, 2, &text);
+  sq_getfloat(vm, 3, &x);
+  sq_getfloat(vm, 4, &y);
+  if (g_canvas && text)
+    g_canvas->fillText(text, x, y);
+  return 0;
+}
+
 // ===== Registration =====
 void registerGfxBinding(HSQUIRRELVM vm) {
   // Create gfx table
@@ -293,6 +367,36 @@ void registerGfxBinding(HSQUIRRELVM vm) {
 
   sq_pushstring(vm, "getTargetSize", -1);
   sq_newclosure(vm, gfx_getTargetSize, 0);
+  sq_newslot(vm, -3, SQFalse);
+
+  // Images
+  sq_pushstring(vm, "loadImage", -1);
+  sq_newclosure(vm, gfx_loadImage, 0);
+  sq_newslot(vm, -3, SQFalse);
+
+  sq_pushstring(vm, "freeImage", -1);
+  sq_newclosure(vm, gfx_freeImage, 0);
+  sq_newslot(vm, -3, SQFalse);
+
+  sq_pushstring(vm, "drawImage", -1);
+  sq_newclosure(vm, gfx_drawImage, 0);
+  sq_newslot(vm, -3, SQFalse);
+
+  // Text
+  sq_pushstring(vm, "loadFont", -1);
+  sq_newclosure(vm, gfx_loadFont, 0);
+  sq_newslot(vm, -3, SQFalse);
+
+  sq_pushstring(vm, "freeFont", -1);
+  sq_newclosure(vm, gfx_freeFont, 0);
+  sq_newslot(vm, -3, SQFalse);
+
+  sq_pushstring(vm, "setFont", -1);
+  sq_newclosure(vm, gfx_setFont, 0);
+  sq_newslot(vm, -3, SQFalse);
+
+  sq_pushstring(vm, "fillText", -1);
+  sq_newclosure(vm, gfx_fillText, 0);
   sq_newslot(vm, -3, SQFalse);
 
   // Add gfx table to root

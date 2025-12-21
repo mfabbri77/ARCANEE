@@ -75,6 +75,23 @@ public:
   void strokeRect(f32 x, f32 y, f32 w, f32 h);
   void clearRect(f32 x, f32 y, f32 w, f32 h);
 
+  // ===== Images (§6.3.6) =====
+  u32 loadImage(const char *path);
+  void freeImage(u32 handle);
+  bool getImageSize(u32 handle, u32 &width, u32 &height);
+  void drawImage(u32 handle, f32 x, f32 y);
+  void drawImageRect(u32 handle, i32 sx, i32 sy, i32 sw, i32 sh, f32 dx, f32 dy,
+                     f32 dw, f32 dh);
+
+  // ===== Text (§6.3.8) =====
+  u32 loadFont(const char *path, i32 sizePx);
+  void freeFont(u32 handle);
+  void setFont(u32 handle);
+  void setTextAlign(TextAlign align);
+  void setTextBaseline(TextBaseline baseline);
+  void fillText(const char *text, f32 x, f32 y);
+  void strokeText(const char *text, f32 x, f32 y);
+
   // ===== GPU Interface =====
   void *getShaderResourceView();
   bool isValid() const;
