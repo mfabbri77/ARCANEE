@@ -115,4 +115,32 @@ void *RenderDevice::getSwapChain() {
   return m_impl ? m_impl->pSwapChain.RawPtr() : nullptr;
 }
 
+// ===== VSync Control =====
+void RenderDevice::setVSync(bool enabled) {
+  m_vsyncEnabled = enabled;
+  if (m_impl && m_impl->pSwapChain) {
+    // Diligent uses present interval: 0 = no vsync, 1 = vsync
+    // This will take effect on next Present() call
+    LOG_INFO("RenderDevice: VSync %s", enabled ? "enabled" : "disabled");
+  }
+}
+
+bool RenderDevice::isVSyncEnabled() const { return m_vsyncEnabled; }
+
+// ===== Device Loss Recovery =====
+bool RenderDevice::isDeviceLost() const { return m_deviceLost; }
+
+bool RenderDevice::tryRecoverDevice() {
+  if (!m_deviceLost)
+    return true;
+
+  LOG_INFO("RenderDevice: Attempting device recovery...");
+
+  // In Diligent, device loss recovery typically requires
+  // recreating all resources. For v0.1, we mark as unrecoverable
+  // and require application restart.
+  LOG_ERROR("RenderDevice: Device loss recovery not implemented in v0.1");
+  return false;
+}
+
 } // namespace arcanee::render
