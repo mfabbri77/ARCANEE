@@ -272,6 +272,73 @@ static SQInteger gfx_fillText(HSQUIRRELVM vm) {
   return 0;
 }
 
+// ===== Gradients =====
+static SQInteger gfx_createLinearGradient(HSQUIRRELVM vm) {
+  SQFloat x1, y1, x2, y2;
+  sq_getfloat(vm, 2, &x1);
+  sq_getfloat(vm, 3, &y1);
+  sq_getfloat(vm, 4, &x2);
+  sq_getfloat(vm, 5, &y2);
+  if (g_canvas) {
+    u32 handle = g_canvas->createLinearGradient(x1, y1, x2, y2);
+    sq_pushinteger(vm, handle);
+  } else {
+    sq_pushinteger(vm, 0);
+  }
+  return 1;
+}
+
+static SQInteger gfx_createRadialGradient(HSQUIRRELVM vm) {
+  SQFloat cx, cy, r;
+  sq_getfloat(vm, 2, &cx);
+  sq_getfloat(vm, 3, &cy);
+  sq_getfloat(vm, 4, &r);
+  if (g_canvas) {
+    u32 handle = g_canvas->createRadialGradient(cx, cy, r);
+    sq_pushinteger(vm, handle);
+  } else {
+    sq_pushinteger(vm, 0);
+  }
+  return 1;
+}
+
+static SQInteger gfx_freePaint(HSQUIRRELVM vm) {
+  SQInteger handle;
+  sq_getinteger(vm, 2, &handle);
+  if (g_canvas)
+    g_canvas->freePaint(static_cast<u32>(handle));
+  return 0;
+}
+
+static SQInteger gfx_setFillPaint(HSQUIRRELVM vm) {
+  SQInteger handle;
+  sq_getinteger(vm, 2, &handle);
+  if (g_canvas)
+    g_canvas->setFillPaint(static_cast<u32>(handle));
+  return 0;
+}
+
+static SQInteger gfx_setStrokePaint(HSQUIRRELVM vm) {
+  SQInteger handle;
+  sq_getinteger(vm, 2, &handle);
+  if (g_canvas)
+    g_canvas->setStrokePaint(static_cast<u32>(handle));
+  return 0;
+}
+
+// ===== Blend Modes =====
+static SQInteger gfx_setBlend(HSQUIRRELVM vm) {
+  const SQChar *mode = nullptr;
+  sq_getstring(vm, 2, &mode);
+  if (g_canvas && mode) {
+    SQBool result = g_canvas->setBlend(mode) ? SQTrue : SQFalse;
+    sq_pushbool(vm, result);
+  } else {
+    sq_pushbool(vm, SQFalse);
+  }
+  return 1;
+}
+
 // ===== Registration =====
 void registerGfxBinding(HSQUIRRELVM vm) {
   // Create gfx table
@@ -397,6 +464,32 @@ void registerGfxBinding(HSQUIRRELVM vm) {
 
   sq_pushstring(vm, "fillText", -1);
   sq_newclosure(vm, gfx_fillText, 0);
+  sq_newslot(vm, -3, SQFalse);
+
+  // Gradients
+  sq_pushstring(vm, "createLinearGradient", -1);
+  sq_newclosure(vm, gfx_createLinearGradient, 0);
+  sq_newslot(vm, -3, SQFalse);
+
+  sq_pushstring(vm, "createRadialGradient", -1);
+  sq_newclosure(vm, gfx_createRadialGradient, 0);
+  sq_newslot(vm, -3, SQFalse);
+
+  sq_pushstring(vm, "freePaint", -1);
+  sq_newclosure(vm, gfx_freePaint, 0);
+  sq_newslot(vm, -3, SQFalse);
+
+  sq_pushstring(vm, "setFillPaint", -1);
+  sq_newclosure(vm, gfx_setFillPaint, 0);
+  sq_newslot(vm, -3, SQFalse);
+
+  sq_pushstring(vm, "setStrokePaint", -1);
+  sq_newclosure(vm, gfx_setStrokePaint, 0);
+  sq_newslot(vm, -3, SQFalse);
+
+  // Blend modes
+  sq_pushstring(vm, "setBlend", -1);
+  sq_newclosure(vm, gfx_setBlend, 0);
   sq_newslot(vm, -3, SQFalse);
 
   // Add gfx table to root

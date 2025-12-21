@@ -92,6 +92,18 @@ public:
   void fillText(const char *text, f32 x, f32 y);
   void strokeText(const char *text, f32 x, f32 y);
 
+  // ===== Gradients (§6.3.7) =====
+  u32 createLinearGradient(f32 x1, f32 y1, f32 x2, f32 y2);
+  u32 createRadialGradient(f32 cx, f32 cy, f32 r);
+  bool paintSetStops(u32 handle, const f32 *offsets, const u32 *colors,
+                     u32 count);
+  void freePaint(u32 handle);
+  void setFillPaint(u32 handle);
+  void setStrokePaint(u32 handle);
+
+  // ===== Blend Modes (§6.3.2) =====
+  bool setBlend(const char *mode);
+
   // ===== GPU Interface =====
   void *getShaderResourceView();
   bool isValid() const;

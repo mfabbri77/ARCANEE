@@ -44,6 +44,12 @@ struct Canvas2D::Impl {
   std::unordered_map<u32, FontInfo> fonts;
   u32 nextFontHandle = 1;
   u32 currentFontHandle = 0;
+
+  // Gradient/Paint resources (handle -> Fill)
+  std::unordered_map<u32, std::unique_ptr<tvg::Fill>> paints;
+  u32 nextPaintHandle = 1;
+  u32 currentFillPaint = 0;
+  u32 currentStrokePaint = 0;
 };
 
 // Helper to extract ARGB color components
@@ -611,6 +617,111 @@ void Canvas2D::strokeText(const char *text, f32 x, f32 y) {
   // ThorVG Text doesn't directly support stroke text
   // For v0.1, fall back to fill text
   fillText(text, x, y);
+}
+
+// ===== Gradients (§6.3.7) =====
+u32 Canvas2D::createLinearGradient(f32 x1, f32 y1, f32 x2, f32 y2) {
+  if (!m_impl)
+    return 0;
+
+  auto grad = tvg::LinearGradient::gen();
+  if (!grad)
+    return 0;
+
+  grad->linear(x1, y1, x2, y2);
+
+  u32 handle = m_impl->nextPaintHandle++;
+  m_impl->paints[handle] = std::move(grad);
+  return handle;
+}
+
+u32 Canvas2D::createRadialGradient(f32 cx, f32 cy, f32 r) {
+  if (!m_impl)
+    return 0;
+
+  auto grad = tvg::RadialGradient::gen();
+  if (!grad)
+    return 0;
+
+  grad->radial(cx, cy, r);
+
+  u32 handle = m_impl->nextPaintHandle++;
+  m_impl->paints[handle] = std::move(grad);
+  return handle;
+}
+
+bool Canvas2D::paintSetStops(u32 handle, const f32 *offsets, const u32 *colors,
+                             u32 count) {
+  if (!m_impl || count == 0)
+    return false;
+
+  auto it = m_impl->paints.find(handle);
+  if (it == m_impl->paints.end())
+    return false;
+
+  // Build ThorVG color stops
+  std::vector<tvg::Fill::ColorStop> stops(count);
+  for (u32 i = 0; i < count; ++i) {
+    u8 r, g, b, a;
+    colorToRGBA(colors[i], r, g, b, a);
+    stops[i].offset = offsets[i];
+    stops[i].r = r;
+    stops[i].g = g;
+    stops[i].b = b;
+    stops[i].a = a;
+  }
+
+  it->second->colorStops(stops.data(), count);
+  return true;
+}
+
+void Canvas2D::freePaint(u32 handle) {
+  if (m_impl) {
+    m_impl->paints.erase(handle);
+    if (m_impl->currentFillPaint == handle)
+      m_impl->currentFillPaint = 0;
+    if (m_impl->currentStrokePaint == handle)
+      m_impl->currentStrokePaint = 0;
+  }
+}
+
+void Canvas2D::setFillPaint(u32 handle) {
+  if (m_impl) {
+    m_impl->currentFillPaint = handle;
+  }
+}
+
+void Canvas2D::setStrokePaint(u32 handle) {
+  if (m_impl) {
+    m_impl->currentStrokePaint = handle;
+  }
+}
+
+// ===== Blend Modes (§6.3.2) =====
+bool Canvas2D::setBlend(const char *mode) {
+  if (!mode)
+    return false;
+
+  std::string m(mode);
+  BlendMode blend = BlendMode::Normal;
+
+  if (m == "normal")
+    blend = BlendMode::Normal;
+  else if (m == "multiply")
+    blend = BlendMode::Multiply;
+  else if (m == "screen")
+    blend = BlendMode::Screen;
+  else if (m == "overlay")
+    blend = BlendMode::Overlay;
+  else if (m == "darken")
+    blend = BlendMode::Darken;
+  else if (m == "lighten")
+    blend = BlendMode::Lighten;
+  else
+    return false; // unsupported mode
+
+  m_stateStack.current().blendMode = blend;
+  return true;
 }
 
 } // namespace arcanee::render
