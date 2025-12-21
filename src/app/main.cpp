@@ -24,8 +24,11 @@
 #include <string>
 
 int main(int argc, char *argv[]) {
-  (void)argc;
-  (void)argv;
+  // Parse command line arguments
+  std::string cartridgePath = "samples/hello"; // Default fallback
+  if (argc > 1) {
+    cartridgePath = argv[1];
+  }
 
   LOG_INFO("Starting %s v%s", std::string(arcanee::kEngineName).c_str(),
            std::string(arcanee::kEngineVersion).c_str());
@@ -44,7 +47,7 @@ int main(int argc, char *argv[]) {
   // Run the application
   int exitCode = 0;
   {
-    arcanee::app::Runtime runtime;
+    arcanee::app::Runtime runtime(cartridgePath);
     exitCode = runtime.run();
   }
 

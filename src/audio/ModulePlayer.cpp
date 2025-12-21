@@ -159,7 +159,23 @@ i32 ModulePlayer::getCurrentRow() const {
 
 u32 ModulePlayer::render(f32 *buffer, u32 frames, u32 sampleRate) {
 #ifdef HAS_LIBOPENMPT
-  if (!m_module || !m_playing.load() || m_paused.load()) {
+  if (!m_module) {
+    static bool logNull = false;
+    if (!logNull) {
+      arcanee::Log::error("ModulePlayer: m_module is NULL");
+      logNull = true;
+    }
+    return 0;
+  }
+  if (!m_playing.load()) {
+    static bool logPlay = false;
+    if (!logPlay) {
+      arcanee::Log::info("ModulePlayer: Not playing");
+      logPlay = true;
+    }
+    return 0;
+  }
+  if (m_paused.load()) {
     return 0;
   }
 
@@ -167,17 +183,17 @@ u32 ModulePlayer::render(f32 *buffer, u32 frames, u32 sampleRate) {
       m_module, static_cast<int32_t>(sampleRate), static_cast<size_t>(frames),
       buffer);
 
+  if (rendered == 0) {
+    // Check if module ended
+    m_playing.store(false);
+  }
+
   // Apply volume
   f32 vol = m_volume.load();
   if (vol < 1.0f) {
     for (size_t i = 0; i < rendered * 2; ++i) {
       buffer[i] *= vol;
     }
-  }
-
-  // Check if module ended
-  if (rendered == 0) {
-    m_playing.store(false);
   }
 
   return static_cast<u32>(rendered);

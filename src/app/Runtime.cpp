@@ -15,12 +15,13 @@
 #include "common/Log.h"
 #include "platform/Time.h"
 #include "render/RenderDevice.h"
+#include "script/api/AudioBinding.h"
+#include "script/api/GfxBinding.h"
 #include <SDL2/SDL.h>
 #include <algorithm>
 #include <cmath>
 
 namespace arcanee::app {
-
 // ============================================================================
 // Normative Constants from Chapter 2 §2.3.3
 // ============================================================================
@@ -34,9 +35,13 @@ constexpr double kMaxFrameTime = 0.25;
 // Implementation
 // ============================================================================
 
-Runtime::Runtime() { initSubsystems(); }
+Runtime::Runtime(const std::string &cartridgePath) {
+  initSubsystems();
+  loadCartridge(cartridgePath);
+}
 
 Runtime::~Runtime() {
+  script::setAudioVfs(nullptr); // Added
   audio::setAudioManager(nullptr);
   shutdownSubsystems();
 }
@@ -78,6 +83,7 @@ void Runtime::initSubsystems() {
     // Audio failure is non-fatal for now
   }
   audio::setAudioManager(m_audioManager.get());
+  script::setAudioVfs(m_vfs.get()); // Added
 
   // 3. Initialize Script Engine (Moved to step 6 for flow but keeping ptr)
   // m_scriptEngine is initialized later
@@ -121,18 +127,33 @@ void Runtime::initSubsystems() {
     return;
   }
 
+  // 5e. Initialize Palette (PICO-8 Standard)
+  // 5e. Initialize Palette (PICO-8 Standard)
+  m_palette.clear();
+  m_palette.push_back(0x00000000); // 0: Transparent
+  m_palette.push_back(0xFF1D2B53); // 1: Dark Blue
+  m_palette.push_back(0xFF7E2553); // 2: Dark Purple
+  m_palette.push_back(0xFF008751); // 3: Dark Green
+  m_palette.push_back(0xFFAB5236); // 4: Brown
+  m_palette.push_back(0xFF5F574F); // 5: Dark Gray
+  m_palette.push_back(0xFFC2C3C7); // 6: Light Gray
+  m_palette.push_back(0xFFFFF1E8); // 7: White
+  m_palette.push_back(0xFFFF004D); // 8: Red
+  m_palette.push_back(0xFFFFA300); // 9: Orange
+  m_palette.push_back(0xFFFFEC27); // 10: Yellow
+  m_palette.push_back(0xFF00E436); // 11: Green
+  m_palette.push_back(0xFF29ADFF); // 12: Blue
+  m_palette.push_back(0xFF83769C); // 13: Indigo
+  m_palette.push_back(0xFFFF77A8); // 14: Pink
+  m_palette.push_back(0xFFFFCCAA); // 15: Peach
+
+  m_palette.push_back(0xFFFFCCAA); // 15: Peach
+
+  arcanee::script::setGfxPalette(&m_palette);
+  arcanee::script::setGfxCanvas(m_canvas2d.get());
+
   // 6. Initialize Script Engine
   m_scriptEngine = std::make_unique<script::ScriptEngine>();
-
-  // 7. Load Cartridge
-  // m_vfs is a unique_ptr, so pass raw pointer via .get()
-  m_cartridge =
-      std::make_unique<runtime::Cartridge>(m_vfs.get(), m_scriptEngine.get());
-  if (!m_cartridge->load("samples/hello")) {
-    LOG_ERROR("Failed to load cartridge");
-  } else {
-    LOG_INFO("Cartridge State: Unloaded -> Loading");
-  }
 
   m_isRunning = true;
   LOG_INFO("Runtime: Subsystems initialized");
@@ -235,32 +256,18 @@ void Runtime::draw(f64 alpha) {
   if (m_canvas2d && m_canvas2d->isValid()) {
     m_canvas2d->beginFrame();
 
-    // Clear canvas to dark blue background
-    m_canvas2d->clear(0xFF1a1a2e);
+    // Clear canvas to dark blue background? Or let cartridge do it?
+    // Spec says cartridge 'gfx.clear' handles it. But we should probably clear
+    // to transparent or black initially? Let's clear to transparent so CBUF
+    // background shows if cartridge doesn't clear.
+    // m_canvas2d->clear(0x00000000);
 
-    // Draw test graphics: colorful rectangles
-    m_canvas2d->setFillColor(0xFFe94560); // Red
-    m_canvas2d->fillRect(100, 100, 200, 150);
-
-    m_canvas2d->setFillColor(0xFF16213e); // Dark blue
-    m_canvas2d->fillRect(350, 100, 200, 150);
-
-    m_canvas2d->setFillColor(0xFF0f3460); // Navy
-    m_canvas2d->fillRect(600, 100, 200, 150);
-
-    // Draw animated rectangle based on time
-    static float animTime = 0.0f;
-    animTime += 0.016f; // ~60fps
-    float offset = sinf(animTime * 2.0f) * 50.0f;
-    m_canvas2d->setFillColor(0xFFe94560); // Coral
-    m_canvas2d->fillRect(380 + offset, 300, 200, 100);
+    // 3. Run cartridge draw (Generates canvas commands)
+    if (m_cartridge) {
+      m_cartridge->draw(alpha);
+    }
 
     m_canvas2d->endFrame(*m_renderDevice);
-  }
-
-  // 3. (Future) Run cartridge draw
-  if (m_cartridge) {
-    m_cartridge->draw(alpha);
   }
 
   // 4. Present Canvas2D to backbuffer (through CBUF)
@@ -275,6 +282,28 @@ void Runtime::draw(f64 alpha) {
   if (m_renderDevice) {
     m_renderDevice->present();
   }
+}
+
+// ----------------------------------------------------------------------------
+// Cartridge Loading
+// ----------------------------------------------------------------------------
+
+bool Runtime::loadCartridge(const std::string &path) {
+  LOG_INFO("Runtime: Loading cartridge from '%s'", path.c_str());
+
+  // 1. Create Cartridge Manager
+  // m_vfs is a unique_ptr, so pass raw pointer via .get()
+  m_cartridge =
+      std::make_unique<runtime::Cartridge>(m_vfs.get(), m_scriptEngine.get());
+
+  // 2. Load Cartridge (handles VFS mount and script load)
+  if (!m_cartridge->load(path)) {
+    LOG_ERROR("Runtime: Failed to load cartridge");
+    return false;
+  }
+
+  LOG_INFO("Runtime: Cartridge loaded successfully");
+  return true;
 }
 
 } // namespace arcanee::app

@@ -82,6 +82,8 @@ endif()
 pkg_check_modules(LIBOPENMPT libopenmpt)
 if(NOT LIBOPENMPT_FOUND)
     message(WARNING "libopenmpt not found. Install libopenmpt-dev for audio module support.")
+else()
+    add_compile_definitions(HAS_LIBOPENMPT)
 endif()
 
 # Build ThorVG as static library from source

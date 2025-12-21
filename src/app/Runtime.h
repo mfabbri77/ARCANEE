@@ -39,10 +39,13 @@ namespace arcanee::app {
  */
 class Runtime {
 public:
-  Runtime();
+  explicit Runtime(const std::string &cartridgePath);
   ~Runtime();
 
   int run();
+
+  // Public for now, or make private and called from ctor
+  bool loadCartridge(const std::string &path);
 
 private:
   void initSubsystems();
@@ -68,6 +71,7 @@ private:
   render::CBufPreset m_cbufPreset = render::CBufPreset::Medium_16_9;
 
   std::unique_ptr<runtime::Cartridge> m_cartridge;
+  std::vector<u32> m_palette;
 };
 
 } // namespace arcanee::app

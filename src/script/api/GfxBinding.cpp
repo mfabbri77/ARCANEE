@@ -9,15 +9,34 @@
  */
 
 #include "GfxBinding.h"
+#include "common/Log.h"
 #include "render/Canvas2D.h"
 #include <sqstdaux.h>
+#include <vector>
 
 namespace arcanee::script {
 
 // Global canvas pointer set by Runtime before script execution
 static render::Canvas2D *g_canvas = nullptr;
+static const std::vector<u32> *g_palette = nullptr;
 
-void setGfxCanvas(render::Canvas2D *canvas) { g_canvas = canvas; }
+void setGfxCanvas(render::Canvas2D *canvas) {
+  g_canvas = canvas;
+  arcanee::Log::info("GfxBinding: g_canvas set to %p", (void *)canvas);
+}
+void setGfxPalette(const std::vector<u32> *palette) {
+  g_palette = palette;
+  arcanee::Log::info("GfxBinding: g_palette set to %p (size=%zu)",
+                     (void *)palette, palette ? palette->size() : 0);
+}
+
+static u32 resolveColor(SQInteger colorIdx) {
+  if (g_palette && colorIdx >= 0 && colorIdx < (SQInteger)g_palette->size()) {
+    return (*g_palette)[colorIdx];
+  }
+  return static_cast<u32>(
+      colorIdx); // Fallback to raw value (or should we clamp?)
+}
 
 // ===== Clearing =====
 static SQInteger gfx_clear(HSQUIRRELVM vm) {
@@ -25,8 +44,11 @@ static SQInteger gfx_clear(HSQUIRRELVM vm) {
   if (sq_gettop(vm) >= 2) {
     sq_getinteger(vm, 2, &color);
   }
-  if (g_canvas) {
-    g_canvas->clear(static_cast<u32>(color));
+
+  if (!g_canvas) {
+    // Should not happen if Runtime is correct, but safe guard.
+  } else {
+    g_canvas->clear(resolveColor(color));
   }
   return 0;
 }
@@ -82,7 +104,7 @@ static SQInteger gfx_setFillColor(HSQUIRRELVM vm) {
   SQInteger color;
   sq_getinteger(vm, 2, &color);
   if (g_canvas)
-    g_canvas->setFillColor(static_cast<u32>(color));
+    g_canvas->setFillColor(resolveColor(color));
   return 0;
 }
 
@@ -90,7 +112,7 @@ static SQInteger gfx_setStrokeColor(HSQUIRRELVM vm) {
   SQInteger color;
   sq_getinteger(vm, 2, &color);
   if (g_canvas)
-    g_canvas->setStrokeColor(static_cast<u32>(color));
+    g_canvas->setStrokeColor(resolveColor(color));
   return 0;
 }
 
@@ -188,14 +210,21 @@ static SQInteger gfx_strokeRect(HSQUIRRELVM vm) {
 }
 
 static SQInteger gfx_getTargetSize(HSQUIRRELVM vm) {
+  sq_newarray(vm, 0); // Create new array
+
   if (!g_canvas) {
     sq_pushinteger(vm, 0);
+    sq_arrayappend(vm, -2);
     sq_pushinteger(vm, 0);
-    return 2;
+    sq_arrayappend(vm, -2);
+    return 1;
   }
+
   sq_pushinteger(vm, g_canvas->getWidth());
+  sq_arrayappend(vm, -2);
   sq_pushinteger(vm, g_canvas->getHeight());
-  return 2;
+  sq_arrayappend(vm, -2);
+  return 1;
 }
 
 // ===== Images =====

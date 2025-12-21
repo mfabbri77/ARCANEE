@@ -106,6 +106,11 @@ void Framebuffer::clear(void *deviceContext, f32 r, f32 g, f32 b, f32 a) {
   if (!pContext || !m_impl->pRTV)
     return;
 
+  // Bind render targets before clearing (Required for OpenGL / Best Practice)
+  ITextureView *pRTVs[] = {m_impl->pRTV};
+  pContext->SetRenderTargets(1, pRTVs, m_impl->pDSV,
+                             RESOURCE_STATE_TRANSITION_MODE_TRANSITION);
+
   float clearColor[] = {r, g, b, a};
   pContext->ClearRenderTarget(m_impl->pRTV, clearColor,
                               RESOURCE_STATE_TRANSITION_MODE_TRANSITION);

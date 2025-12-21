@@ -179,6 +179,18 @@ void Canvas2D::endFrame(RenderDevice &device) {
   m_impl->canvas->draw();
   m_impl->canvas->sync();
 
+  // DEBUG: Check center pixel
+  if (!m_impl->cpuBuffer.empty()) {
+    static int vidPrintCounter = 0;
+    if (++vidPrintCounter % 60 == 0) {
+      u32 centerIdx = (m_height / 2) * m_width + (m_width / 2);
+      if (centerIdx < m_impl->cpuBuffer.size()) {
+        u32 pixel = m_impl->cpuBuffer[centerIdx];
+        LOG_INFO("Canvas2D: Center Pixel: 0x%08X", pixel);
+      }
+    }
+  }
+
   auto *pContext = static_cast<IDeviceContext *>(device.getContext());
   if (!pContext || !m_impl->pTexture)
     return;
@@ -212,7 +224,17 @@ void Canvas2D::clear(u32 color) {
   u8 r, g, b, a;
   colorToRGBA(color, r, g, b, a);
   bg->fill(r, g, b, a);
-  m_impl->canvas->push(std::move(bg));
+
+  // Debug log every 60 frames approx to avoid spam
+  static int debugCtr = 0;
+  if (debugCtr++ % 60 == 0) {
+    LOG_INFO("Canvas2D::clear color=0x%08X (R%u G%u B%u A%u)", color, r, g, b,
+             a);
+  }
+
+  if (m_impl->canvas->push(std::move(bg)) != tvg::Result::Success) {
+    LOG_ERROR("Canvas2D: Failed to push background shape");
+  }
 }
 
 // ===== State Stack =====

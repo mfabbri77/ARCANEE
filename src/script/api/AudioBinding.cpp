@@ -11,19 +11,44 @@
 #include "AudioBinding.h"
 #include "audio/AudioManager.h"
 #include "common/Types.h"
+#include "vfs/Vfs.h"
 #include <sqstdaux.h>
 #include <sqstdio.h>
+#include <vector>
 
 namespace arcanee::script {
 
 using audio::AudioManager;
 using audio::getAudioManager;
 
+// Global VFS pointer for audio loading
+// Global VFS pointer for audio loading
+static arcanee::vfs::IVfs *g_audioVfs = nullptr;
+
+void setAudioVfs(arcanee::vfs::IVfs *vfs) { g_audioVfs = vfs; }
+
 // ===== Module Functions =====
 static SQInteger audio_loadModule(HSQUIRRELVM vm) {
-  // TODO: Load from VFS path
-  // For now, return 0 (not implemented)
-  sq_pushinteger(vm, 0);
+  const SQChar *path = nullptr;
+  if (SQ_FAILED(sq_getstring(vm, 2, &path))) {
+    return sq_throwerror(vm, "Invalid path argument");
+  }
+
+  if (!g_audioVfs || !getAudioManager()) {
+    return sq_throwerror(vm, "Audio system not initialized");
+  }
+
+  // Load file via VFS
+  auto dataOpt = g_audioVfs->readBytes(path);
+  if (!dataOpt) {
+    sq_pushinteger(vm, 0); // Return 0 on failure
+    return 1;
+  }
+  const auto &buffer = *dataOpt;
+
+  // Load into AudioManager
+  u32 modHandle = getAudioManager()->loadModule(buffer.data(), buffer.size());
+  sq_pushinteger(vm, static_cast<SQInteger>(modHandle));
   return 1;
 }
 
@@ -90,8 +115,26 @@ static SQInteger audio_isModulePlaying(HSQUIRRELVM vm) {
 
 // ===== Sound Functions =====
 static SQInteger audio_loadSound(HSQUIRRELVM vm) {
-  // TODO: Load from VFS path
-  sq_pushinteger(vm, 0);
+  const SQChar *path = nullptr;
+  if (SQ_FAILED(sq_getstring(vm, 2, &path))) {
+    return sq_throwerror(vm, "Invalid path argument");
+  }
+
+  if (!g_audioVfs || !getAudioManager()) {
+    return sq_throwerror(vm, "Audio system not initialized");
+  }
+
+  auto dataOpt = g_audioVfs->readBytes(path);
+  if (!dataOpt) {
+    sq_pushinteger(vm, 0); // Return 0 on failure
+    return 1;
+  }
+  const auto &buffer = *dataOpt;
+
+  // Assuming 44100/2 for raw loading default as discussed
+  u32 sndHandle =
+      getAudioManager()->loadSound(buffer.data(), buffer.size(), 44100, 2);
+  sq_pushinteger(vm, static_cast<SQInteger>(sndHandle));
   return 1;
 }
 

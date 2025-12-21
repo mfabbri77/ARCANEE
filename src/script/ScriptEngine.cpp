@@ -35,6 +35,7 @@ namespace {
 
 // Error print callback (routes to LOG_ERROR)
 // Output print callback (routes to LOG_INFO)
+[[maybe_unused]]
 void printFunc(HSQUIRRELVM /*v*/, const SQChar *s, ...) {
   va_list args;
   va_start(args, s);
@@ -53,6 +54,7 @@ void printFunc(HSQUIRRELVM /*v*/, const SQChar *s, ...) {
   va_end(args);
 }
 
+[[maybe_unused]]
 void errorFunc(HSQUIRRELVM /*v*/, const SQChar *s, ...) {
   va_list args;
   va_start(args, s);
@@ -148,6 +150,9 @@ bool ScriptEngine::initialize(vfs::IVfs *vfs, ScriptConfig config) {
 
   // Enable debug info for watchdog/debugging if configured
   sq_enabledebuginfo(m_vm, config.debugInfo ? SQTrue : SQFalse);
+
+  // Set print/error callbacks
+  sq_setprintfunc(m_vm, printFunc, errorFunc);
 
   // Set runtime error handler
   sq_newclosure(m_vm, runtimeErrorHandler, 0);

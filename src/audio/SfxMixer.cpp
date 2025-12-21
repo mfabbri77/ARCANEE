@@ -106,6 +106,7 @@ void SfxMixer::mix(f32 *buffer, u32 frames, u32 sampleRate) {
 
   for (u32 v = 0; v < MAX_VOICES; ++v) {
     Voice &voice = m_voices[v];
+
     if (!voice.playing || !voice.sound) {
       continue;
     }

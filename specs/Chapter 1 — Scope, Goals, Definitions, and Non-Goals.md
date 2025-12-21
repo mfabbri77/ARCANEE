@@ -35,13 +35,28 @@ Primary goals:
 
 ------
 
-### 1.3 Non-Goals (v0.1)
+### 1.5 Coding and Debugging Standards
+
+### Debugging Code
+When inserting temporary logging, assertions, or test code for debugging purposes, you MUST surround the code with the following markers to ensure easy removal:
+
+```cpp
+// DEBUG STUFF TO BE REMOVED {start block}
+LOG_INFO("Debug value: %d", value);
+// DEBUG STUFF TO BE REMOVED {end block}
+```
+
+This applies to all source files (C++, Squirrel, CMake). **When the debugging phase is complete, you MUST remove the entire block, including the start/end markers.**
+
+------
+
+### 1.6 Non-Goals (v0.1)
 
 ARCANEE v0.1 explicitly does **not** include:
 
 - Multiplayer/networking API exposed to cartridges (permission stays disabled by default; no shipping net stack requirements).
 - User-generated native plugins callable from cartridges (native permission disabled by default).
-- Guaranteed binary determinism at floating-point bit level across all CPUs/GPUs (v0.1 targets *logical determinism* and consistent simulation behavior; see §1.6).
+- Guaranteed binary determinism at floating-point bit level across all CPUs/GPUs (v0.1 targets *logical determinism* and consistent simulation behavior; see §1.9).
 - Full typography layout engine (e.g., complex shaping, bi-di, full paragraph layout). v0.1 supports basic text rendering and measurement; advanced layout is deferred.
 - A full general-purpose OS shell (file manager, terminals, etc.). Workbench is cartridge-oriented.
 

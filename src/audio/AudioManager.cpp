@@ -35,6 +35,10 @@ bool AudioManager::initialize() {
     return false;
   }
 
+  // Ensure default volumes
+  m_device->setMasterVolume(1.0f);
+  m_modulePlayer->setVolume(1.0f);
+
   LOG_INFO("AudioManager: Initialized successfully");
   return true;
 }
@@ -197,15 +201,17 @@ void AudioManager::mixAudio(f32 *buffer, u32 frames, u32 sampleRate) {
   // Process pending commands
   processCommands();
 
-  // Clear buffer
+  // Clear buffer first (SDL expects mixed data, but we overwrite/add)
+  // Actually typically callback provides silence or existing data.
+  // We assume clear for our logic if we effectively own the mix.
   std::memset(buffer, 0, frames * 2 * sizeof(f32));
 
-  // Mix module player
+  // 1. Render Module (Music)
   if (m_modulePlayer) {
     m_modulePlayer->render(buffer, frames, sampleRate);
   }
 
-  // Mix SFX
+  // 2. Render SFX (Additive)
   if (m_sfxMixer) {
     m_sfxMixer->mix(buffer, frames, sampleRate);
   }

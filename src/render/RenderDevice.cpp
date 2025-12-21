@@ -49,6 +49,10 @@ bool RenderDevice::initialize(void *displayHandle, unsigned long windowHandle) {
   // Try Vulkan first
   auto *pFactoryVk = GetEngineFactoryVk();
   EngineVkCreateInfo engineCI;
+  // Validation layers are not available in the current environment
+  // Explicitly disable to suppress "VK_LAYER_KHRONOS_validation not available"
+  // warning
+  engineCI.EnableValidation = false;
 
   pFactoryVk->CreateDeviceAndContextsVk(engineCI, &m_impl->pDevice,
                                         &m_impl->pImmediateContext);
