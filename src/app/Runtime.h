@@ -14,6 +14,9 @@
  */
 
 #include "platform/Window.h"
+#include "render/CBufPresets.h"
+#include "render/Framebuffer.h"
+#include "render/PresentPass.h"
 #include "render/RenderDevice.h"
 #include "runtime/Cartridge.h"
 #include "script/ScriptEngine.h"
@@ -51,6 +54,11 @@ private:
   std::unique_ptr<vfs::IVfs> m_vfs;
   std::unique_ptr<script::ScriptEngine> m_scriptEngine;
   std::unique_ptr<render::RenderDevice> m_renderDevice;
+
+  // Rendering (Phase 3.2-3.3)
+  std::unique_ptr<render::Framebuffer> m_cbuf;
+  std::unique_ptr<render::PresentPass> m_presentPass;
+  render::CBufPreset m_cbufPreset = render::CBufPreset::Medium_16_9;
 
   std::unique_ptr<runtime::Cartridge> m_cartridge;
 };

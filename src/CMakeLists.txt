@@ -37,11 +37,12 @@ set(SCRIPT_SOURCES
     script/ScriptEngine.cpp
     script/api/SysBinding.cpp
     script/api/FsBinding.cpp
+)
 
-    # Render
+set(RENDER_SOURCES
     render/RenderDevice.cpp
-    script/api/FsBinding.cpp
-    script/api/FsBinding.h
+    render/Framebuffer.cpp
+    render/PresentPass.cpp
 )
 
 set(APP_SOURCES
@@ -56,6 +57,7 @@ add_executable(arcanee
     ${VFS_SOURCES}
     ${RUNTIME_SOURCES}
     ${SCRIPT_SOURCES}
+    ${RENDER_SOURCES}
 )
 
 # Include directories

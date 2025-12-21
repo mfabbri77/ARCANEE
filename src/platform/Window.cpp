@@ -20,6 +20,7 @@
 
 #include "Window.h"
 #include "common/Log.h"
+#include <SDL_syswm.h>
 
 namespace arcanee::platform {
 
@@ -233,6 +234,30 @@ bool Window::toggleFullscreen() {
   } else {
     return setFullscreenMode(FullscreenMode::Windowed);
   }
+}
+
+Window::NativeWindowInfo Window::getNativeWindowInfo() const {
+  NativeWindowInfo info = {nullptr, 0};
+
+  if (!m_window) {
+    return info;
+  }
+
+  SDL_SysWMinfo wmInfo;
+  SDL_VERSION(&wmInfo.version);
+
+  if (SDL_GetWindowWMInfo(m_window, &wmInfo)) {
+#ifdef __linux__
+    if (wmInfo.subsystem == SDL_SYSWM_X11) {
+      info.display = wmInfo.info.x11.display;
+      info.window = wmInfo.info.x11.window;
+    }
+#endif
+  } else {
+    LOG_WARN("Window: Failed to get WM info: %s", SDL_GetError());
+  }
+
+  return info;
 }
 
 } // namespace arcanee::platform

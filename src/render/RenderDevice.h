@@ -19,7 +19,7 @@ public:
   RenderDevice(const RenderDevice &) = delete;
   RenderDevice &operator=(const RenderDevice &) = delete;
 
-  bool initialize(void *nativeWindowHandle);
+  bool initialize(void *displayHandle, unsigned long windowHandle);
   void present();
   void resize(u32 width, u32 height);
 

@@ -66,8 +66,30 @@ void Runtime::initSubsystems() {
 
   // 5. Initialize Rendering (Phase 3)
   m_renderDevice = std::make_unique<render::RenderDevice>();
-  if (!m_renderDevice->initialize(m_window->getNativeHandle())) {
+  auto windowInfo = m_window->getNativeWindowInfo();
+  if (!m_renderDevice->initialize(windowInfo.display, windowInfo.window)) {
     LOG_ERROR("Failed to initialize RenderDevice");
+    m_isRunning = false;
+    return;
+  }
+
+  // 5b. Create CBUF (Phase 3.2)
+  auto cbufDims = render::getCBufDimensions(m_cbufPreset);
+  m_cbuf = std::make_unique<render::Framebuffer>();
+  if (!m_cbuf->create(*m_renderDevice, cbufDims.width, cbufDims.height, true)) {
+    LOG_ERROR("Failed to create CBUF");
+    m_isRunning = false;
+    return;
+  }
+  LOG_INFO("CBUF: %ux%u (%s)", cbufDims.width, cbufDims.height,
+           render::getCBufAspectString(m_cbufPreset));
+
+  // 5c. Create Present Pass (Phase 3.3)
+  m_presentPass = std::make_unique<render::PresentPass>();
+  if (!m_presentPass->initialize(*m_renderDevice)) {
+    LOG_ERROR("Failed to initialize PresentPass");
+    m_isRunning = false;
+    return;
   }
 
   // 6. Initialize Script Engine
@@ -96,7 +118,9 @@ void Runtime::shutdownSubsystems() {
     m_cartridge.reset();
   }
 
-  m_scriptEngine.reset(); // Correct for unique_ptr
+  m_scriptEngine.reset();
+  m_presentPass.reset();
+  m_cbuf.reset();
   m_renderDevice.reset();
 
   // VFS depends on PhysFS, safe to destroy last
@@ -172,8 +196,26 @@ void Runtime::update(f64 dt) {
 }
 
 void Runtime::draw(f64 alpha) {
+  // 1. Clear CBUF to a test color (magenta for visibility)
+  if (m_cbuf && m_renderDevice) {
+    m_cbuf->clear(m_renderDevice->getContext(), 0.8f, 0.2f, 0.6f, 1.0f);
+  }
+
+  // 2. (Future) Run cartridge draw
   if (m_cartridge) {
     m_cartridge->draw(alpha);
+  }
+
+  // 3. Present CBUF to backbuffer
+  if (m_presentPass && m_cbuf && m_cbuf->isValid()) {
+    m_presentPass->execute(*m_renderDevice, m_cbuf->getShaderResourceView(),
+                           m_cbuf->getWidth(), m_cbuf->getHeight(),
+                           render::PresentMode::Fit);
+  }
+
+  // 4. Present swapchain
+  if (m_renderDevice) {
+    m_renderDevice->present();
   }
 }
 

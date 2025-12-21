@@ -10,7 +10,7 @@
 #if PLATFORM_LINUX
 #include "Graphics/GraphicsEngineOpenGL/interface/EngineFactoryOpenGL.h"
 #include "Graphics/GraphicsEngineVulkan/interface/EngineFactoryVk.h"
-#include <X11/X.h> // For Window type
+#include <X11/Xlib.h> // For Display and Window types
 #endif
 
 namespace arcanee::render {
@@ -35,7 +35,7 @@ RenderDevice::~RenderDevice() {
   }
 }
 
-bool RenderDevice::initialize(void *nativeWindowHandle) {
+bool RenderDevice::initialize(void *displayHandle, unsigned long windowHandle) {
   LOG_INFO("Initializing RenderDevice...");
 
   SwapChainDesc swapChainDesc;
@@ -56,10 +56,10 @@ bool RenderDevice::initialize(void *nativeWindowHandle) {
   if (m_impl->pDevice) {
     LOG_INFO("RenderDevice: Vulkan device created");
 
-    // Create swapchain
+    // Create swapchain with proper X11 handles
     LinuxNativeWindow window;
-    window.WindowId =
-        static_cast<Window>(reinterpret_cast<uintptr_t>(nativeWindowHandle));
+    window.WindowId = static_cast<Window>(windowHandle);
+    window.pDisplay = static_cast<Display *>(displayHandle);
 
     pFactoryVk->CreateSwapChainVk(m_impl->pDevice, m_impl->pImmediateContext,
                                   swapChainDesc, window, &m_impl->pSwapChain);
@@ -68,15 +68,16 @@ bool RenderDevice::initialize(void *nativeWindowHandle) {
 
     auto *pFactoryGL = GetEngineFactoryOpenGL();
     EngineGLCreateInfo engineCIGL;
-    engineCIGL.Window.WindowId =
-        static_cast<Window>(reinterpret_cast<uintptr_t>(nativeWindowHandle));
+    engineCIGL.Window.WindowId = static_cast<Window>(windowHandle);
+    engineCIGL.Window.pDisplay = static_cast<Display *>(displayHandle);
 
     pFactoryGL->CreateDeviceAndSwapChainGL(engineCIGL, &m_impl->pDevice,
                                            &m_impl->pImmediateContext,
                                            swapChainDesc, &m_impl->pSwapChain);
   }
 #else
-  (void)nativeWindowHandle;
+  (void)displayHandle;
+  (void)windowHandle;
   LOG_ERROR("RenderDevice: Platform not supported yet");
   return false;
 #endif

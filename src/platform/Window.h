@@ -106,6 +106,19 @@ public:
   // --- Window Properties ---
 
   /**
+   * @brief Native window info for GPU integration.
+   */
+  struct NativeWindowInfo {
+    void *display;        ///< X11 Display* on Linux
+    unsigned long window; ///< X11 Window handle on Linux
+  };
+
+  /**
+   * @brief Get native window info for Vulkan/OpenGL.
+   */
+  NativeWindowInfo getNativeWindowInfo() const;
+
+  /**
    * @brief Get the native SDL window handle.
    */
   SDL_Window *getNativeHandle() const { return m_window; }
