@@ -1,9 +1,24 @@
+/**
+ * @file Vfs.cpp
+ * @brief VFS path utilities and error handling implementation.
+ *
+ * Contains path normalization per the normative pseudocode in §3.6.1.1.
+ * The actual PhysFS-backed filesystem operations are in VfsImpl.cpp.
+ *
+ * @ref specs/Chapter 3 §3.6.1
+ *      "ARCANEE MUST normalize VFS paths before resolution"
+ */
+
 #include "Vfs.h"
 #include "common/Log.h"
 #include <algorithm>
 #include <sstream>
 
 namespace arcanee::vfs {
+
+// ============================================================================
+// Error string conversion
+// ============================================================================
 
 const char *vfsErrorToString(VfsError err) {
   switch (err) {
@@ -19,6 +34,10 @@ const char *vfsErrorToString(VfsError err) {
     return "File not found";
   case VfsError::DirectoryNotFound:
     return "Directory not found";
+  case VfsError::NotAFile:
+    return "Not a file";
+  case VfsError::NotADirectory:
+    return "Not a directory";
   case VfsError::PermissionDenied:
     return "Permission denied";
   case VfsError::QuotaExceeded:
@@ -27,13 +46,19 @@ const char *vfsErrorToString(VfsError err) {
     return "I/O error";
   case VfsError::NotInitialized:
     return "VFS not initialized";
+  case VfsError::InvalidUtf8:
+    return "File is not valid UTF-8";
   }
   return "Unknown error";
 }
 
-// Path implementation based on Chapter 3 §3.6.1.1
+// ============================================================================
+// Path Implementation - Based on Chapter 3 §3.6.1.1 Normative Pseudocode
+// ============================================================================
+
 std::optional<ParsedPath> Path::parse(const std::string &input) {
-  // Step 1: Find namespace separator ":/
+  // Step 1: Find namespace separator ":/"
+  // @ref specs/Chapter 3 §3.6.1.1
   size_t colonPos = input.find(":/");
   if (colonPos == std::string::npos) {
     LOG_DEBUG("Path::parse: missing namespace separator in '%s'",
@@ -49,26 +74,39 @@ std::optional<ParsedPath> Path::parse(const std::string &input) {
     return std::nullopt;
   }
 
-  // Step 3: Extract path after ":/""
+  // Step 3: Extract path after ":/"
   std::string path = input.substr(colonPos + 2);
 
   // Step 4: Replace backslashes with forward slashes
+  // @ref specs/Chapter 3 §3.6.1: "Accept both / and \ in inputs"
   std::replace(path.begin(), path.end(), '\\', '/');
 
   // Step 5: Split into segments and process
+  // @ref specs/Chapter 3 §3.6.1.1: Segment processing
   std::vector<std::string> segments;
   std::istringstream stream(path);
   std::string segment;
 
   while (std::getline(stream, segment, '/')) {
-    if (segment.empty() || segment == ".") {
-      continue; // Skip empty and current-dir segments
+    // Skip empty segments (handles // -> /)
+    if (segment.empty()) {
+      continue;
     }
+
+    // Skip current-dir segments
+    // @ref specs/Chapter 3 §3.6.1: "Resolve . segments"
+    if (segment == ".") {
+      continue;
+    }
+
+    // REJECT parent traversal - SECURITY CRITICAL
+    // @ref specs/Chapter 3 §3.6.1: "Reject any path containing .."
     if (segment == "..") {
       LOG_DEBUG("Path::parse: parent traversal (..) rejected in '%s'",
                 input.c_str());
-      return std::nullopt; // REJECT parent traversal (normative)
+      return std::nullopt;
     }
+
     segments.push_back(segment);
   }
 
@@ -124,6 +162,49 @@ std::string Path::join(const std::string &base, const std::string &relative) {
     return base + "/" + relative;
   }
   return base + relative;
+}
+
+std::string Path::parent(const std::string &path) {
+  if (path.empty()) {
+    return "";
+  }
+
+  // Find last separator
+  size_t pos = path.rfind('/');
+  if (pos == std::string::npos) {
+    return ""; // No parent, at root
+  }
+
+  return path.substr(0, pos);
+}
+
+std::string Path::filename(const std::string &path) {
+  if (path.empty()) {
+    return "";
+  }
+
+  // Find last separator
+  size_t pos = path.rfind('/');
+  if (pos == std::string::npos) {
+    return path; // No separator, path is filename
+  }
+
+  return path.substr(pos + 1);
+}
+
+std::string Path::extension(const std::string &path) {
+  std::string file = filename(path);
+  if (file.empty()) {
+    return "";
+  }
+
+  // Find last dot (but not at start - that's a hidden file)
+  size_t pos = file.rfind('.');
+  if (pos == std::string::npos || pos == 0) {
+    return "";
+  }
+
+  return file.substr(pos);
 }
 
 } // namespace arcanee::vfs

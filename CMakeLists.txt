@@ -18,8 +18,9 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 # Setup dependency finding module path if needed
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
-# Find required packages (Phase 1 needs SDL2)
+# Find required packages
 find_package(SDL2 REQUIRED)
+find_package(PhysFS REQUIRED)
 
 # Add source directory
 add_subdirectory(src)

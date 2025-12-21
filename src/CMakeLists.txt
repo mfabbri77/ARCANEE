@@ -13,10 +13,12 @@ set(COMMON_SOURCES
 
 set(VFS_SOURCES
     vfs/Vfs.cpp
+    vfs/VfsImpl.cpp
 )
 
 set(RUNTIME_SOURCES
     runtime/Cartridge.cpp
+    runtime/Manifest.cpp
 )
 
 set(PLATFORM_SOURCES
@@ -43,11 +45,13 @@ target_include_directories(arcanee PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_BINARY_DIR}/generated"
     ${SDL2_INCLUDE_DIRS}
+    ${PHYSFS_INCLUDE_DIRS}
 )
 
 # Link libraries
 target_link_libraries(arcanee PRIVATE
     ${SDL2_LIBRARIES}
+    ${PHYSFS_LIBRARIES}
 )
 
 # Compilation features
