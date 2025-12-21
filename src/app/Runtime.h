@@ -14,6 +14,7 @@
  */
 
 #include "platform/Window.h"
+#include "render/RenderDevice.h"
 #include "runtime/Cartridge.h"
 #include "script/ScriptEngine.h"
 #include "vfs/Vfs.h"
@@ -34,10 +35,6 @@ public:
   Runtime();
   ~Runtime();
 
-  /**
-   * @brief Run the main loop until exit.
-   * @return Exit code (0 = success).
-   */
   int run();
 
 private:
@@ -47,14 +44,15 @@ private:
   void update(f64 dt);
   void draw(f64 alpha);
 
+  bool m_isRunning;
+
   // Subsystems
   std::unique_ptr<platform::Window> m_window;
   std::unique_ptr<vfs::IVfs> m_vfs;
   std::unique_ptr<script::ScriptEngine> m_scriptEngine;
-  std::unique_ptr<runtime::Cartridge> m_cartridge;
+  std::unique_ptr<render::RenderDevice> m_renderDevice;
 
-  // State
-  bool m_isRunning = false;
+  std::unique_ptr<runtime::Cartridge> m_cartridge;
 };
 
 } // namespace arcanee::app

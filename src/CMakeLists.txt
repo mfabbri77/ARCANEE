@@ -35,9 +35,11 @@ set(PLATFORM_SOURCES
 
 set(SCRIPT_SOURCES
     script/ScriptEngine.cpp
-    script/ScriptEngine.h
     script/api/SysBinding.cpp
-    script/api/SysBinding.h
+    script/api/FsBinding.cpp
+
+    # Render
+    render/RenderDevice.cpp
     script/api/FsBinding.cpp
     script/api/FsBinding.h
 )
@@ -65,12 +67,20 @@ target_include_directories(arcanee PRIVATE
     ${PHYSFS_INCLUDE_DIRS}
 )
 
+# DiligentCore as SYSTEM to suppress warnings from their headers
+target_include_directories(arcanee SYSTEM PRIVATE
+    "${diligentcore_SOURCE_DIR}"
+)
+
 # Link libraries
 target_link_libraries(arcanee PRIVATE
-    ${SDL2_LIBRARIES}
+    SDL2::SDL2
     ${PHYSFS_LIBRARIES}
     squirrel_static
     sqstdlib_static
+    Diligent-GraphicsEngineVk-static
+    Diligent-GraphicsEngineOpenGL-static
+    Diligent-GraphicsTools
 )
 
 # Compilation features

@@ -280,15 +280,22 @@ Normative constraints:
 
 ## D.5 Build and Dependency Management (Recommended)
 
-### D.5.1 Third-Party Isolation
+### D.5.1 Third-Party Integration strategy
 
-Place third-party libs under `third_party/` and wrap them behind ARCANEE interfaces:
+Dependencies SHOULD be managed via CMake's `FetchContent` (or `ExternalProject`) to ensure a reproducible, single-command build environment without requiring manual installation of system libraries.
 
-* SDL2 wrapper in `platform`
-* PhysFS wrapper in `vfs`
-* ThorVG wrapper in `render2d`
-* libopenmpt wrapper in `audio`
-* Diligent wrapper in `render`
+* **Squirrel**: FetchContent (static build)
+* **SDL2**: FindPackage (system) OR FetchContent (static) - *User preference: CMake managed*
+* **DiligentEngine**: FetchContent (Core + Tools + FX)
+* **PhysFS**: FetchContent (static)
+* **ThorVG**: FetchContent (static)
+* **libopenmpt**: FetchContent (static)
+
+Wrappers should still exist to isolate these dependencies:
+* `platform` wraps SDL2
+* `render` wraps Diligent
+* `vfs` wraps PhysFS
+* etc.
 
 ### D.5.2 Backend Selection
 

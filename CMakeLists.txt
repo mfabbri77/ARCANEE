@@ -11,7 +11,7 @@ cmake_minimum_required(VERSION 3.16)
 project(ARCANEE
     VERSION 0.1.0
     DESCRIPTION "Modern Fantasy Console Runtime"
-    LANGUAGES CXX)
+    LANGUAGES C CXX)
 
 # Enforce C++17 Standard (Normative Requirement per Chapter 1)
 set(CMAKE_CXX_STANDARD 17)
@@ -50,6 +50,19 @@ set(SQ_DISABLE_HEADER_INSTALLER ON CACHE BOOL "Disable header install" FORCE)
 set(SQ_DISABLE_CMAKE_INSTALLER ON CACHE BOOL "Disable cmake config install" FORCE)
 
 FetchContent_MakeAvailable(squirrel)
+
+# Diligent Engine (Core only - Tools/FX have broken relative includes)
+set(DILIGENT_BUILD_SAMPLES OFF CACHE BOOL "Disable Diligent Samples" FORCE)
+set(DILIGENT_BUILD_TESTS OFF CACHE BOOL "Disable Diligent Tests" FORCE)
+set(DILIGENT_NO_FORMATTING ON CACHE BOOL "Disable clang-format" FORCE)
+
+FetchContent_Declare(
+    DiligentCore
+    GIT_REPOSITORY https://github.com/DiligentGraphics/DiligentCore.git
+    GIT_TAG        v2.5.5
+)
+
+FetchContent_MakeAvailable(DiligentCore)
 
 # Workaround for upstream CMake bug in sq/CMakeLists.txt where it tries to alias 'sq' even if static
 # We can't easily patch the file, but by disabling dynamic we avoid half the issue.

@@ -14,6 +14,7 @@
 #include "Runtime.h"
 #include "common/Log.h"
 #include "platform/Time.h"
+#include "render/RenderDevice.h"
 #include <SDL2/SDL.h>
 #include <algorithm>
 
@@ -58,23 +59,28 @@ void Runtime::initSubsystems() {
   // 2. Initialize VFS
   m_vfs = vfs::createVfs();
 
-  // 3. Initialize Script Engine
+  // 3. Initialize Script Engine (Moved to step 6 for flow but keeping ptr)
+  // m_scriptEngine is initialized later
+
+  // 4. Create Cartridge Manager (Placeholder removed, real load is later)
+
+  // 5. Initialize Rendering (Phase 3)
+  m_renderDevice = std::make_unique<render::RenderDevice>();
+  if (!m_renderDevice->initialize(m_window->getNativeHandle())) {
+    LOG_ERROR("Failed to initialize RenderDevice");
+  }
+
+  // 6. Initialize Script Engine
   m_scriptEngine = std::make_unique<script::ScriptEngine>();
 
-  // 4. Create Cartridge Manager
-  // Note: VFS init depends on cartridge loading for the cart:/ mount.
-  // We need to load the cartridge to init the VFS properly.
-  // Cartridge::load handles VFS config and init internally.
+  // 7. Load Cartridge
+  // m_vfs is a unique_ptr, so pass raw pointer via .get()
   m_cartridge =
       std::make_unique<runtime::Cartridge>(m_vfs.get(), m_scriptEngine.get());
-
-  // Load default cartridge
-  // in future parsed from args
-  std::string cartPath = "samples/hello";
-  if (!m_cartridge->load(cartPath)) {
-    LOG_ERROR("Runtime: Failed to load cartridge: %s", cartPath.c_str());
-    m_isRunning = false; // Or enter error state? For V0.1 we stop.
-    return;
+  if (!m_cartridge->load("samples/hello")) {
+    LOG_ERROR("Failed to load cartridge");
+  } else {
+    LOG_INFO("Cartridge State: Unloaded -> Loading");
   }
 
   m_isRunning = true;
@@ -84,11 +90,18 @@ void Runtime::initSubsystems() {
 void Runtime::shutdownSubsystems() {
   LOG_INFO("Runtime: Shutting down subsystems");
 
-  m_cartridge->unload();
-  m_cartridge.reset();
+  // Unload cartridge first
+  if (m_cartridge) {
+    m_cartridge->unload();
+    m_cartridge.reset();
+  }
 
-  m_scriptEngine.reset();
+  m_scriptEngine.reset(); // Correct for unique_ptr
+  m_renderDevice.reset();
+
+  // VFS depends on PhysFS, safe to destroy last
   m_vfs.reset();
+
   m_window.reset();
 
   LOG_INFO("Runtime: Subsystems shutdown complete");
