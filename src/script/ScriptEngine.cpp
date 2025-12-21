@@ -11,6 +11,7 @@
  */
 
 #include "ScriptEngine.h"
+#include "api/AudioBinding.h"
 #include "api/FsBinding.h"
 #include "api/GfxBinding.h"
 #include "api/SysBinding.h"
@@ -196,7 +197,8 @@ void ScriptEngine::registerStandardLibraries() {
 void ScriptEngine::registerArcaneeApi() {
   api::RegisterSysBinding(m_vm);
   api::RegisterFsBinding(m_vm);
-  registerGfxBinding(m_vm); // gfx.* table
+  registerGfxBinding(m_vm);   // gfx.* table
+  registerAudioBinding(m_vm); // audio.* table
 }
 
 void ScriptEngine::setWatchdog(bool enable, f64 timeoutSec) {

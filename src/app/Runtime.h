@@ -13,6 +13,7 @@
  * @brief ARCANEE main runtime orchestration.
  */
 
+#include "audio/AudioManager.h"
 #include "platform/Window.h"
 #include "render/CBufPresets.h"
 #include "render/Canvas2D.h"
@@ -55,6 +56,7 @@ private:
   std::unique_ptr<vfs::IVfs> m_vfs;
   std::unique_ptr<script::ScriptEngine> m_scriptEngine;
   std::unique_ptr<render::RenderDevice> m_renderDevice;
+  std::unique_ptr<audio::AudioManager> m_audioManager;
 
   // Rendering (Phase 3.2-3.3)
   std::unique_ptr<render::Framebuffer> m_cbuf;

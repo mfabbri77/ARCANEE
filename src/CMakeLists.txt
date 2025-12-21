@@ -38,6 +38,7 @@ set(SCRIPT_SOURCES
     script/api/SysBinding.cpp
     script/api/FsBinding.cpp
     script/api/GfxBinding.cpp
+    script/api/AudioBinding.cpp
 )
 
 set(RENDER_SOURCES
@@ -51,6 +52,7 @@ set(AUDIO_SOURCES
     audio/AudioDevice.cpp
     audio/ModulePlayer.cpp
     audio/SfxMixer.cpp
+    audio/AudioManager.cpp
 )
 
 set(APP_SOURCES

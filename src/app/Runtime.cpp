@@ -36,7 +36,10 @@ constexpr double kMaxFrameTime = 0.25;
 
 Runtime::Runtime() { initSubsystems(); }
 
-Runtime::~Runtime() { shutdownSubsystems(); }
+Runtime::~Runtime() {
+  audio::setAudioManager(nullptr);
+  shutdownSubsystems();
+}
 
 void Runtime::initSubsystems() {
   LOG_INFO("Runtime: Initializing subsystems");
@@ -59,6 +62,14 @@ void Runtime::initSubsystems() {
 
   // 2. Initialize VFS
   m_vfs = vfs::createVfs();
+
+  // 2b. Initialize Audio
+  m_audioManager = std::make_unique<audio::AudioManager>();
+  if (!m_audioManager->initialize()) {
+    LOG_ERROR("Failed to initialize AudioManager");
+    // Audio failure is non-fatal for now
+  }
+  audio::setAudioManager(m_audioManager.get());
 
   // 3. Initialize Script Engine (Moved to step 6 for flow but keeping ptr)
   // m_scriptEngine is initialized later
