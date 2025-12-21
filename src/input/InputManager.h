@@ -1,6 +1,7 @@
 #pragma once
 
 #include "InputState.h"
+#include "common/Types.h"
 #include "platform/Window.h"
 #include <SDL2/SDL.h>
 #include <memory>

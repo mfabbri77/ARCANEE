@@ -14,6 +14,7 @@
  */
 
 #include "audio/AudioManager.h"
+#include "common/Types.h"
 #include "input/InputManager.h"
 #include "platform/Window.h"
 #include "render/CBufPresets.h"
