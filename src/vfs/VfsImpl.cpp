@@ -18,6 +18,7 @@
 #include <cstring>
 #include <filesystem>
 #include <physfs.h>
+#include <sys/stat.h>
 
 namespace arcanee::vfs {
 
@@ -484,12 +485,12 @@ private:
       stat.size =
           fs::is_regular_file(hostPath, ec) ? fs::file_size(hostPath, ec) : 0;
 
-      auto ftime = fs::last_write_time(hostPath, ec);
-      if (!ec) {
-        // Convert to Unix epoch
-        auto sctp = std::chrono::time_point_cast<std::chrono::seconds>(
-            std::chrono::file_clock::to_sys(ftime));
-        stat.mtime = sctp.time_since_epoch().count();
+      // Get mtime using POSIX stat (C++17 compatible)
+      // NOTE: std::filesystem::file_time_type to time_t conversion
+      // is not standardized until C++20, so we use stat() directly
+      struct ::stat st;
+      if (::stat(hostPath.c_str(), &st) == 0) {
+        stat.mtime = static_cast<i64>(st.st_mtime);
       }
     }
 

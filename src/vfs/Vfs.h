@@ -18,6 +18,7 @@
  */
 
 #include "common/Types.h"
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
