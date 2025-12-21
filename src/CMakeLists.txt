@@ -20,6 +20,8 @@ set(RUNTIME_SOURCES
 )
 
 set(PLATFORM_SOURCES
+    platform/Platform.cpp
+    platform/Time.cpp
     platform/Window.cpp
 )
 
