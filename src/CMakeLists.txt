@@ -39,6 +39,7 @@ set(SCRIPT_SOURCES
     script/api/FsBinding.cpp
     script/api/GfxBinding.cpp
     script/api/AudioBinding.cpp
+    script/api/InputBinding.cpp
 )
 
 set(RENDER_SOURCES
@@ -55,6 +56,10 @@ set(AUDIO_SOURCES
     audio/AudioManager.cpp
 )
 
+set(INPUT_SOURCES
+    input/InputManager.cpp
+)
+
 set(APP_SOURCES
     app/main.cpp
     app/Runtime.cpp
@@ -68,6 +73,7 @@ add_executable(arcanee
     ${SCRIPT_SOURCES}
     ${RENDER_SOURCES}
     ${AUDIO_SOURCES}
+    ${INPUT_SOURCES}
 )
 
 # Include directories

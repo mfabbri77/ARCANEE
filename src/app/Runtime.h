@@ -14,6 +14,7 @@
  */
 
 #include "audio/AudioManager.h"
+#include "input/InputManager.h"
 #include "platform/Window.h"
 #include "render/CBufPresets.h"
 #include "render/Canvas2D.h"
@@ -57,6 +58,7 @@ private:
   std::unique_ptr<script::ScriptEngine> m_scriptEngine;
   std::unique_ptr<render::RenderDevice> m_renderDevice;
   std::unique_ptr<audio::AudioManager> m_audioManager;
+  std::unique_ptr<input::InputManager> m_inputManager;
 
   // Rendering (Phase 3.2-3.3)
   std::unique_ptr<render::Framebuffer> m_cbuf;

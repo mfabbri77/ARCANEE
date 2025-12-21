@@ -14,6 +14,7 @@
 #include "api/AudioBinding.h"
 #include "api/FsBinding.h"
 #include "api/GfxBinding.h"
+#include "api/InputBinding.h"
 #include "api/SysBinding.h"
 #include "common/Assert.h"
 #include "common/Log.h"
@@ -199,6 +200,7 @@ void ScriptEngine::registerArcaneeApi() {
   api::RegisterFsBinding(m_vm);
   registerGfxBinding(m_vm);   // gfx.* table
   registerAudioBinding(m_vm); // audio.* table
+  registerInputBinding(m_vm); // inp.* table
 }
 
 void ScriptEngine::setWatchdog(bool enable, f64 timeoutSec) {

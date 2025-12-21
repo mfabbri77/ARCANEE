@@ -60,6 +60,14 @@ void Runtime::initSubsystems() {
     return;
   }
 
+  // 1b. Initialize Input
+  m_inputManager = std::make_unique<input::InputManager>();
+  if (!m_inputManager->initialize(m_window.get())) {
+    LOG_ERROR("Failed to initialize InputManager");
+    // Non-fatal, but problematic
+  }
+  input::setInputManager(m_inputManager.get());
+
   // 2. Initialize VFS
   m_vfs = vfs::createVfs();
 
@@ -149,6 +157,7 @@ void Runtime::shutdownSubsystems() {
 
   m_window.reset();
 
+  input::setInputManager(nullptr);
   LOG_INFO("Runtime: Subsystems shutdown complete");
 }
 
