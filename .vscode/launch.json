@@ -1,0 +1,14 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug ARCANEE",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/arcanee",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Build ARCANEE"
+        }
+    ]
+}
