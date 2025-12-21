@@ -1,7 +1,8 @@
 #include "Runtime.h"
+#include "common/Log.h"
+#include "runtime/Cartridge.h"
 #include <SDL.h>
 #include <algorithm>
-#include <iostream>
 
 namespace arcanee::app {
 
@@ -24,7 +25,7 @@ void Runtime::InitSubsystems() {
   m_window = std::make_unique<platform::Window>(winConfig);
 
   if (!m_window->isOpen()) {
-    std::cerr << "Runtime Error: Failed to create window." << std::endl;
+    LOG_ERROR("Runtime: Failed to create window");
     m_running = false;
   }
 }
@@ -38,8 +39,7 @@ int Runtime::Run() {
   if (!m_running)
     return 1;
 
-  std::cout << "Runtime: Starting Main Loop (Fixed Timestep: " << kTickHz
-            << " Hz)" << std::endl;
+  LOG_INFO("Runtime: Starting Main Loop (Fixed Timestep: %.0f Hz)", kTickHz);
 
   double accumulator = 0.0;
   uint64_t perfFreq = SDL_GetPerformanceFrequency();

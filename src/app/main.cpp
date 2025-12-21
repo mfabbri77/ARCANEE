@@ -1,20 +1,21 @@
+#include "common/Log.h"
 #include "common/Version.h"
 #include <SDL.h>
-#include <iostream>
 
 #include "app/Runtime.h"
 
 int main(int argc, char *argv[]) {
   (void)argc;
   (void)argv;
-  std::cout << "Starting " << arcanee::kEngineName << " v"
-            << arcanee::kEngineVersion << std::endl;
+
+  LOG_INFO("Starting %s v%s", std::string(arcanee::kEngineName).c_str(),
+           std::string(arcanee::kEngineVersion).c_str());
 
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) != 0) {
-    std::cerr << "SDL_Init Error: " << SDL_GetError() << std::endl;
+    LOG_FATAL("SDL_Init Error: %s", SDL_GetError());
     return 1;
   }
-  std::cout << "SDL2 Initialized successfully." << std::endl;
+  LOG_INFO("SDL2 Initialized successfully");
 
   {
     arcanee::app::Runtime runtime;
@@ -22,5 +23,6 @@ int main(int argc, char *argv[]) {
   }
 
   SDL_Quit();
+  LOG_INFO("Shutdown complete");
   return 0;
 }

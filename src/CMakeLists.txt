@@ -6,11 +6,34 @@ configure_file(
     "${CMAKE_BINARY_DIR}/generated/common/Version.h"
 )
 
-# Define the main executable
-add_executable(arcanee
+# Collect source files by module
+set(COMMON_SOURCES
+    # Headers only for now (Log.h, Assert.h, Types.h)
+)
+
+set(VFS_SOURCES
+    vfs/Vfs.cpp
+)
+
+set(RUNTIME_SOURCES
+    runtime/Cartridge.cpp
+)
+
+set(PLATFORM_SOURCES
+    platform/Window.cpp
+)
+
+set(APP_SOURCES
     app/main.cpp
     app/Runtime.cpp
-    platform/Window.cpp
+)
+
+# Define the main executable
+add_executable(arcanee
+    ${APP_SOURCES}
+    ${PLATFORM_SOURCES}
+    ${VFS_SOURCES}
+    ${RUNTIME_SOURCES}
 )
 
 # Include directories
@@ -34,3 +57,4 @@ if(MSVC)
 else()
     target_compile_options(arcanee PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
+

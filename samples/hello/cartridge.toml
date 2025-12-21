@@ -1,0 +1,25 @@
+# Sample Cartridge
+# Complete example manifest per Chapter 3 §3.4.5
+
+id = "com.arcanee.hello"
+title = "Hello ARCANEE"
+version = "1.0.0"
+api_version = "0.1"
+entry = "main.nut"
+
+[display]
+aspect = "16:9"
+preset = "medium"
+scaling = "integer_nearest"
+allow_user_override = true
+
+[permissions]
+save_storage = true
+audio = true
+net = false
+native = false
+
+[caps]
+cpu_ms_per_update = 2.0
+vm_memory_mb = 64
+audio_channels = 32
