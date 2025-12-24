@@ -57,7 +57,7 @@ Blueprint assumes the repo contains:
   decision_log.md
   walkthrough.md
   implementation_checklist.yaml
-  /cr/
+  cr/
     CR-XXXX.md
 /src/
 /include/

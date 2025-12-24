@@ -16,7 +16,7 @@
 
 ## 9.3 CR Governance
 - [VER-07] All blueprint-impacting work requires a CR:
-  - `/cr/CR-XXXX.md` describing delta, risk, tests, migration notes.
+  - `/blueprint/cr/CR-XXXX.md` describing delta, risk, tests, migration notes.
 - [VER-08] CRs must include perf/regression considerations and CI gates affected.
 
 ## 9.4 Dependency Cadence & Security

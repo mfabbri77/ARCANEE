@@ -67,7 +67,7 @@
 
 ## 0.9 ID & Change Control Policy
 - [REQ-15] IDs are **append-only and never reused**. New IDs must be monotonic per prefix.
-- [VER-01] All blueprint changes require a **CR** under `/cr/CR-XXXX.md` (see Ch9).
+- [VER-01] All blueprint changes require a **CR** under `/blueprint/cr/CR-XXXX.md` (see Ch9).
 - [REQ-16] Any temporary debug code must be marked `[TEMP-DBG]` and CI must fail if any remain.
 
 ## 0.10 Compliance Gates (must exist by v1.0)
