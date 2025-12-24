@@ -6,6 +6,7 @@
 #include <string_view>
 #include <vector>
 
+#include "DapClient.h"
 #include "DocumentSystem.h"
 #include "ParseService.h"
 #include "ProjectSystem.h"
@@ -88,6 +89,7 @@ private:
   int m_selectedTaskIndex = -1;
 
   TimelineStore m_timelineStore;
+  DapClient m_dapClient;
 };
 
 } // namespace arcanee::ide

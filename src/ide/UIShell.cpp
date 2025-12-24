@@ -619,6 +619,95 @@ void UIShell::RenderPanes() {
     }
   }
   ImGui::End();
+
+  // Debugger Control Bar
+  if (ImGui::Begin("Debugger")) {
+    DebugState state = m_dapClient.GetState();
+
+    if (state == DebugState::Disconnected) {
+      Document *doc = m_documentSystem.GetActiveDocument();
+      if (doc && ImGui::Button("Launch Debug")) {
+        m_dapClient.Launch(doc->path);
+      }
+    } else if (state == DebugState::Stopped) {
+      if (ImGui::Button("Continue"))
+        m_dapClient.Continue();
+      ImGui::SameLine();
+      if (ImGui::Button("Step In"))
+        m_dapClient.StepIn();
+      ImGui::SameLine();
+      if (ImGui::Button("Step Over"))
+        m_dapClient.StepOver();
+      ImGui::SameLine();
+      if (ImGui::Button("Step Out"))
+        m_dapClient.StepOut();
+      ImGui::SameLine();
+      if (ImGui::Button("Stop"))
+        m_dapClient.Stop();
+    } else if (state == DebugState::Running) {
+      if (ImGui::Button("Pause"))
+        m_dapClient.Pause();
+      ImGui::SameLine();
+      if (ImGui::Button("Stop"))
+        m_dapClient.Stop();
+    } else {
+      if (ImGui::Button("Disconnect"))
+        m_dapClient.Disconnect();
+    }
+
+    ImGui::Separator();
+
+    // Call Stack
+    ImGui::Text("Call Stack:");
+    auto stack = m_dapClient.GetCallStack();
+    for (const auto &frame : stack) {
+      std::string label = frame.name + " (" + std::to_string(frame.line) + ")";
+      if (ImGui::Selectable(label.c_str())) {
+        // Navigate to frame location
+        Document *doc = nullptr;
+        if (m_documentSystem.OpenDocument(frame.file, &doc).ok()) {
+          m_documentSystem.SetActiveDocument(doc);
+          doc->buffer.SetCursor(doc->buffer.GetLineStart(frame.line - 1));
+        }
+      }
+    }
+
+    ImGui::Separator();
+
+    // Variables
+    ImGui::Text("Locals:");
+    auto locals = m_dapClient.GetLocals(0);
+    for (const auto &var : locals) {
+      ImGui::Text("  %s = %s", var.name.c_str(), var.value.c_str());
+    }
+  }
+  ImGui::End();
+
+  // Breakpoints pane
+  if (ImGui::Begin("Breakpoints")) {
+    auto breakpoints = m_dapClient.GetBreakpoints();
+    for (const auto &bp : breakpoints) {
+      std::string label = std::filesystem::path(bp.file).filename().string() +
+                          ":" + std::to_string(bp.line);
+      bool enabled = bp.enabled;
+      if (ImGui::Checkbox(("##bp" + std::to_string(bp.id)).c_str(), &enabled)) {
+        m_dapClient.ToggleBreakpoint(bp.file, bp.line);
+      }
+      ImGui::SameLine();
+      ImGui::Text("%s", label.c_str());
+    }
+
+    // Add breakpoint via current line
+    Document *doc = m_documentSystem.GetActiveDocument();
+    if (doc && ImGui::Button("Add at Cursor")) {
+      auto cursors = doc->buffer.GetCursors();
+      if (!cursors.empty()) {
+        int line = doc->buffer.GetLineFromOffset(cursors[0].head) + 1;
+        m_dapClient.SetBreakpoint(doc->path, line);
+      }
+    }
+  }
+  ImGui::End();
 }
 
 void UIShell::RenderCommandPalette() {
