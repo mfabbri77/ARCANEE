@@ -47,7 +47,24 @@ int main(int argc, char *argv[]) {
   // Run the application
   int exitCode = 0;
   {
-    arcanee::app::Runtime runtime(cartridgePath);
+    arcanee::app::Runtime::Config config;
+    // Check for arguments
+    config.cartridgePath = "samples/hello"; // Default
+    bool cartPathSet = false;
+
+    for (int i = 1; i < argc; ++i) {
+      std::string arg = argv[i];
+      if (arg == "--benchmark") {
+        config.enableBenchmark = true;
+        config.benchmarkFrames = 100;
+        LOG_INFO("Arg: Benchmark enabled (100 frames)");
+      } else {
+        config.cartridgePath = arg;
+        cartPathSet = true;
+      }
+    }
+
+    arcanee::app::Runtime runtime(config);
     exitCode = runtime.run();
   }
 

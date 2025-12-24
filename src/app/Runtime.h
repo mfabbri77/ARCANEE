@@ -40,7 +40,13 @@ class Workbench; // Forward declaration
  */
 class Runtime {
 public:
-  explicit Runtime(const std::string &cartridgePath, bool headless = false);
+  struct Config {
+    std::string cartridgePath;
+    bool enableBenchmark = false;
+    int benchmarkFrames = 600;
+  };
+
+  explicit Runtime(const Config &config);
   ~Runtime();
 
   int run();
@@ -63,6 +69,8 @@ private:
 
   bool m_isRunning;
   bool m_isHeadless = false;
+  bool m_isBenchmark = false;
+  int m_benchmarkFrames = 0;
 
   // Subsystems
   std::unique_ptr<platform::Window> m_window;

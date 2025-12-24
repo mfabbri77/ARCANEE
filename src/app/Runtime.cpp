@@ -36,10 +36,22 @@ constexpr double kMaxFrameTime = 0.25;
 // Implementation
 // ============================================================================
 
-Runtime::Runtime(const std::string &cartridgePath, bool headless)
-    : m_isHeadless(headless) {
+Runtime::Runtime(const Config &config) : m_isHeadless(false) {
+  if (config.enableBenchmark) {
+    LOG_INFO("Benchmark mode enabled: %d frames", config.benchmarkFrames);
+    m_benchmarkFrames = config.benchmarkFrames;
+    m_isBenchmark = true;
+  }
+
   initSubsystems();
-  loadCartridge(cartridgePath);
+
+  // Load cartridge
+  if (!config.cartridgePath.empty()) {
+    if (!loadCartridge(config.cartridgePath)) {
+      LOG_ERROR("Failed to load cartridge: %s", config.cartridgePath.c_str());
+      // Don't exit here, allows empty runtime
+    }
+  }
 }
 
 Runtime::~Runtime() {
@@ -233,6 +245,10 @@ int Runtime::run() {
   double accumulator = 0.0;
   platform::Time::Stopwatch frameTimer;
 
+  // Benchmark Stats
+  int frames = 0;
+  auto benchmarkStart = std::chrono::high_resolution_clock::now();
+
   while (m_isRunning && !m_window->shouldClose()) {
     // 1. Timing
     double frameTime = frameTimer.lap();
@@ -245,6 +261,23 @@ int Runtime::run() {
     if (m_window->shouldClose()) {
       m_isRunning = false;
       break;
+    }
+
+    // Benchmark Check
+    if (m_isBenchmark) {
+      frames++;
+      if (frames >= m_benchmarkFrames) {
+        auto benchEnd = std::chrono::high_resolution_clock::now();
+        double benchDuration =
+            std::chrono::duration<double>(benchEnd - benchmarkStart).count();
+        double fps = (double)frames / benchDuration;
+
+        // CSV Output: TotalFrames, Duration, FPS
+        std::cout << "BENCHMARK_RESULT," << frames << "," << benchDuration
+                  << "," << fps << std::endl;
+        m_isRunning = false;
+        break;
+      }
     }
 
     if (m_window->wasResized()) {

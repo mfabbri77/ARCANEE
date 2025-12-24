@@ -90,12 +90,20 @@ bool Workbench::initialize(render::RenderDevice *device,
   }
 
   LOG_INFO("Workbench: Initialized successfully");
+  m_initialized = true;
   return true;
 }
 
 void Workbench::shutdown() {
-  ImGui_ImplSDL2_Shutdown(); // Shutdown SDL backend
-  m_impl->pImguiDiligent.reset();
+  if (!m_initialized)
+    return;
+  m_initialized = false;
+
+  ImGui_ImplSDL2_Shutdown();
+
+  if (m_impl->pImguiDiligent) {
+    m_impl->pImguiDiligent.reset();
+  }
 }
 
 void Workbench::update(double dt) {

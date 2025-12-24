@@ -62,6 +62,7 @@ private:
   std::mutex m_logMutex;
   bool m_showLogConsole = true;
   bool m_autoScrollLog = true;
+  bool m_initialized = false;
   void drawLogConsole();
 
   struct Impl;
