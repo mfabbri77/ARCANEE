@@ -75,7 +75,7 @@ FetchContent_Declare(
     DiligentTools
     GIT_REPOSITORY https://github.com/DiligentGraphics/DiligentTools.git
     GIT_TAG        v2.5.5
-    PATCH_COMMAND sh -c "sed -i 's/add_subdirectory(RenderStateNotation)/#&/' CMakeLists.txt && sed -i 's/add_subdirectory(NativeApp)/#&/' CMakeLists.txt && sed -i 's/add_subdirectory(HLSL2GLSLConverter)/#&/' CMakeLists.txt && sed -i 's/target_link_libraries(Diligent-Imgui PRIVATE XCBKeySyms)/#&/' Imgui/CMakeLists.txt"
+    PATCH_COMMAND sh -c "sed -i 's/add_subdirectory(RenderStateNotation)/#&/' CMakeLists.txt && sed -i 's/add_subdirectory(NativeApp)/#&/' CMakeLists.txt && sed -i 's/add_subdirectory(HLSL2GLSLConverter)/#&/' CMakeLists.txt && sed -i 's/add_subdirectory(RenderStatePackager)/#&/' CMakeLists.txt && sed -i 's/target_link_libraries(Diligent-Imgui PRIVATE XCBKeySyms)/#&/' Imgui/CMakeLists.txt"
 )
 
 FetchContent_MakeAvailable(DiligentTools)
@@ -194,4 +194,29 @@ add_custom_target(
     COMMENT "Verifying blueprint consistency and requirements traceability..."
     VERBATIM
 )
+
+# Install Resources
+install(DIRECTORY samples DESTINATION .)
+install(FILES LICENSE DESTINATION .)
+install(FILES README.md DESTINATION .)
+
+# CPack Packaging
+set(CPACK_PACKAGE_NAME "ARCANEE")
+set(CPACK_PACKAGE_VENDOR "Michele Fabbri")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Modern Fantasy Console Runtime")
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/mfabbri77/ARCANEE")
+set(CPACK_PACKAGE_CONTACT "michele.fabbri@example.com")
+set(CPACK_PACKAGE_VERSION_MAJOR "0")
+set(CPACK_PACKAGE_VERSION_MINOR "1")
+set(CPACK_PACKAGE_VERSION_PATCH "0")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
+
+# Generator configuration
+if(WIN32)
+    set(CPACK_GENERATOR "ZIP")
+else()
+    set(CPACK_GENERATOR "TGZ")
+endif()
+
+include(CPack)
 

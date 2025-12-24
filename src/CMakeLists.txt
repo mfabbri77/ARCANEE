@@ -162,3 +162,6 @@ add_executable(arcanee
 )
 
 target_link_libraries(arcanee PRIVATE arcanee_core)
+
+# Install executable
+install(TARGETS arcanee RUNTIME DESTINATION bin)
