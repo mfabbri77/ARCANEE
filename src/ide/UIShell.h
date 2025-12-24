@@ -9,6 +9,7 @@
 #include "DocumentSystem.h"
 #include "ParseService.h"
 #include "ProjectSystem.h"
+#include "SearchService.h"
 
 // Forward declaration of ImGui structures if needed, but we typically use
 // internal dispatch.
@@ -58,6 +59,7 @@ public:
 private:
   void RenderDockspace();
   void RenderPanes();
+  void RenderSearchPane();
   void RenderCommandPalette();
 
   MainThreadQueue &m_queue;
@@ -73,6 +75,12 @@ private:
   ProjectSystem m_projectSystem;
   DocumentSystem m_documentSystem;
   ParseService m_parseService;
+  SearchService m_searchService;
+
+  // Search UI State
+  std::string m_searchQuery;
+  bool m_searchCaseSensitive = false;
+  bool m_searchRegex = false;
 };
 
 } // namespace arcanee::ide

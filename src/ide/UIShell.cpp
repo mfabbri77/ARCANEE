@@ -272,9 +272,9 @@ void UIShell::RenderPanes() {
 
         // Draw Selection (if anchor != head)
         if (cursor.anchor != cursor.head) {
-          // Simplified: Only support single-line selection visual correctly for
-          // now or simple range Full multi-line selection rendering requires
-          // iterating lines between anchor and head.
+          // Simplified: Only support single-line selection visual correctly
+          // for now or simple range Full multi-line selection rendering
+          // requires iterating lines between anchor and head.
           int anchorLine = buffer.GetLineFromOffset(cursor.anchor);
           uint32_t anchorLineStart = buffer.GetLineStart(anchorLine);
           int anchorCol = cursor.anchor - anchorLineStart;
@@ -528,6 +528,8 @@ void UIShell::RenderPanes() {
     ImGui::Text("Logs/Task Output...");
   }
   ImGui::End();
+
+  RenderSearchPane();
 }
 
 void UIShell::RenderCommandPalette() {
@@ -565,6 +567,79 @@ void UIShell::RenderCommandPalette() {
 
     ImGui::EndPopup();
   }
+}
+
+void UIShell::RenderSearchPane() {
+  if (ImGui::Begin("Search")) {
+    // Query Input
+    static char queryBuf[256] = "";
+    if (ImGui::InputText("Query", queryBuf, IM_ARRAYSIZE(queryBuf),
+                         ImGuiInputTextFlags_EnterReturnsTrue)) {
+      m_searchQuery = queryBuf;
+      m_searchService.StartSearch(m_projectSystem.GetRoot().fullPath,
+                                  m_searchQuery, m_searchRegex,
+                                  m_searchCaseSensitive);
+    }
+
+    ImGui::Checkbox("Match Case", &m_searchCaseSensitive);
+    ImGui::SameLine();
+    ImGui::Checkbox("Regex", &m_searchRegex);
+
+    if (ImGui::Button("Find in Files")) {
+      m_searchQuery = queryBuf;
+      m_searchService.StartSearch(m_projectSystem.GetRoot().fullPath,
+                                  m_searchQuery, m_searchRegex,
+                                  m_searchCaseSensitive);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) {
+      m_searchService.CancelSearch();
+    }
+
+    ImGui::Separator();
+
+    // Search Results
+    SearchResult res = m_searchService.GetResults(); // Copy
+    if (!res.query.empty()) {
+      if (res.complete)
+        ImGui::Text("Search complete. %zu matches.", res.matches.size());
+      else
+        ImGui::Text("Searching... %zu matches found so far.",
+                    res.matches.size());
+
+      ImGui::BeginChild("SearchResults");
+
+      // Group by File for better UI
+      std::string lastFile = "";
+      for (const auto &match : res.matches) {
+        if (match.filePath != lastFile) {
+          ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "%s",
+                             std::filesystem::path(match.filePath)
+                                 .filename()
+                                 .string()
+                                 .c_str());
+          lastFile = match.filePath;
+          // Tooltip full path?
+        }
+
+        std::string label =
+            std::to_string(match.lineNumber) + ": " + match.lineContent;
+        if (ImGui::Selectable(label.c_str())) {
+          Document *doc = nullptr;
+          if (m_documentSystem.OpenDocument(match.filePath, &doc).ok()) {
+            m_documentSystem.SetActiveDocument(doc);
+            // Jump to line
+            uint32_t lineStart =
+                doc->buffer.GetLineStart(match.lineNumber - 1); // 0-indexed
+            doc->buffer.SetCursor(lineStart);
+            // TODO: Center view
+          }
+        }
+      }
+      ImGui::EndChild();
+    }
+  }
+  ImGui::End();
 }
 
 } // namespace arcanee::ide
