@@ -16,10 +16,21 @@
 #include <iostream>
 #include <mutex>
 
+#include <functional>
+#include <string>
+#include <vector>
+
 namespace arcanee {
 
 // Log levels per Chapter 11
 enum class LogLevel { Trace, Debug, Info, Warning, Error, Fatal };
+
+struct LogMessage {
+  LogLevel level;
+  std::string timestamp;
+  std::string levelStr;
+  std::string message;
+};
 
 class Log {
 public:
@@ -68,6 +79,12 @@ public:
     va_end(args);
   }
 
+  using LogCallback = std::function<void(const LogMessage &)>;
+  static void addCallback(LogCallback cb) {
+    std::lock_guard<std::mutex> lock(s_mutex);
+    s_callbacks.push_back(cb);
+  }
+
 private:
   static void logv(LogLevel level, const char *fmt, va_list args) {
     if (level < s_minLevel)
@@ -112,14 +129,21 @@ private:
       break;
     }
 
-    // Output
+    // Output to console
     std::ostream &out = (level >= LogLevel::Warning) ? std::cerr : std::cout;
     out << "[" << timeStr << "." << std::setw(3) << std::setfill('0')
         << ms.count() << "] [" << levelStr << "] " << buffer << std::endl;
+
+    // Callbacks
+    LogMessage msg{level, timeStr, levelStr, buffer};
+    for (const auto &cb : s_callbacks) {
+      cb(msg);
+    }
   }
 
   inline static LogLevel s_minLevel = LogLevel::Info;
   inline static std::mutex s_mutex;
+  inline static std::vector<LogCallback> s_callbacks;
 };
 
 // Convenience macros

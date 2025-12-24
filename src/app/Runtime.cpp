@@ -184,7 +184,7 @@ void Runtime::initSubsystems() {
   // 7. Initialize Workbench (MS-04)
   if (!m_isHeadless) {
     m_workbench = std::make_unique<Workbench>();
-    if (!m_workbench->initialize(m_renderDevice.get(), m_window.get())) {
+    if (!m_workbench->initialize(m_renderDevice.get(), m_window.get(), this)) {
       LOG_ERROR("Failed to initialize Workbench");
       // Non-fatal?
     }
