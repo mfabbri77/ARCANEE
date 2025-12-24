@@ -89,6 +89,8 @@ target_include_directories(common INTERFACE
 # Link common to vfs
 target_link_libraries(vfs PRIVATE common)
 
+add_subdirectory(ide)
+
 
 
 add_library(arcanee_core STATIC
@@ -103,6 +105,7 @@ add_library(arcanee_core STATIC
 )
 
 target_link_libraries(arcanee_core PUBLIC
+    arcanee_ide
     vfs
     common
     SDL2::SDL2

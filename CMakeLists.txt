@@ -176,6 +176,106 @@ set_property(TARGET thorvg_static PROPERTY POSITION_INDEPENDENT_CODE ON)
 set_property(TARGET squirrel_static PROPERTY POSITION_INDEPENDENT_CODE ON)
 set_property(TARGET sqstdlib_static PROPERTY POSITION_INDEPENDENT_CODE ON)
 
+# ==========================================
+# v0.2 IDE Feature Flags [BUILD-08]
+# ==========================================
+option(ARCANEE_ENABLE_IDE "Enable Full IDE features (Workbench upgrade)" ON)
+option(ARCANEE_ENABLE_LSP "Enable Squirrel LSP tool" ON)
+option(ARCANEE_ENABLE_DAP "Enable DAP debug adapter" ON)
+option(ARCANEE_ENABLE_TIMELINE "Enable Timeline local history" ON)
+option(ARCANEE_ENABLE_TASKS "Enable Task Runner" ON)
+
+if(ARCANEE_ENABLE_IDE)
+    message(STATUS "Build: Full IDE Enabled")
+endif()
+
+# ==========================================
+# v0.2 IDE Dependencies [BUILD-07]
+# ==========================================
+
+# tree-sitter (Core)
+FetchContent_Declare(
+    tree-sitter
+    GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter.git
+    GIT_TAG        v0.20.9
+)
+FetchContent_MakeAvailable(tree-sitter)
+
+# tree-sitter-squirrel (Grammar) - DEFERRED (Fetch fail)
+# FetchContent_Declare(
+#     tree-sitter-squirrel
+#     GIT_REPOSITORY https://github.com/gbalats/tree-sitter-squirrel.git
+#     GIT_TAG        master
+#     CONFIGURE_COMMAND ${CMAKE_COMMAND} -E echo "Skipping configure"
+#     BUILD_COMMAND ${CMAKE_COMMAND} -E echo "Skipping build"
+#     INSTALL_COMMAND ${CMAKE_COMMAND} -E echo "Skipping install"
+# )
+# FetchContent_MakeAvailable(tree-sitter-squirrel)
+
+# PCRE2 (Regex)
+FetchContent_Declare(
+    pcre2
+    GIT_REPOSITORY https://github.com/PCRE2Project/pcre2.git
+    GIT_TAG        pcre2-10.42
+    CMAKE_ARGS     "-DPCRE2_BUILD_PCRE2_8=ON;-DPCRE2_BUILD_TESTS=OFF;-DPCRE2_BUILD_PCRE2GREP=OFF;-DBUILD_TESTING=OFF"
+)
+FetchContent_MakeAvailable(pcre2)
+
+# SQLite (Timeline Metadata) - DEFERRED (URL fail)
+# FetchContent_Declare(
+#     sqlite3_amalgamation
+#     URL "https://github.com/mackyle/sqlite/archive/refs/tags/version-3.42.0.zip"
+#     CONFIGURE_COMMAND ${CMAKE_COMMAND} -E echo "Skipping configure"
+#     BUILD_COMMAND ${CMAKE_COMMAND} -E echo "Skipping build"
+#     INSTALL_COMMAND ${CMAKE_COMMAND} -E echo "Skipping install"
+# )
+# FetchContent_MakeAvailable(sqlite3_amalgamation)
+
+# zstd (Compression)
+FetchContent_Declare(
+    zstd
+    GIT_REPOSITORY https://github.com/facebook/zstd.git
+    GIT_TAG        v1.5.5
+    CMAKE_ARGS     -DZSTD_BUILD_PROGRAMS=OFF -DZSTD_BUILD_TESTS=OFF
+)
+FetchContent_MakeAvailable(zstd)
+
+# xxHash (Dedup)
+FetchContent_Declare(
+    xxhash
+    GIT_REPOSITORY https://github.com/Cyan4973/xxHash.git
+    GIT_TAG        v0.8.2
+    CMAKE_ARGS     -DXXHASH_BUILD_XXHSUM=OFF
+)
+FetchContent_MakeAvailable(xxhash)
+
+# tomlplusplus (Config)
+FetchContent_Declare(
+    tomlplusplus
+    GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
+    GIT_TAG        v3.4.0
+)
+FetchContent_MakeAvailable(tomlplusplus)
+
+# nlohmann_json (LSP/DAP)
+FetchContent_Declare(
+    json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG        v3.11.2
+    CMAKE_ARGS     -DJSON_BuildTests=OFF
+)
+FetchContent_MakeAvailable(json)
+
+# spdlog (Logging)
+if(NOT TARGET spdlog)
+    FetchContent_Declare(
+        spdlog
+        GIT_REPOSITORY https://github.com/gabime/spdlog.git
+        GIT_TAG        v1.12.0
+    )
+    FetchContent_MakeAvailable(spdlog)
+endif()
+
 # Add source directory
 add_subdirectory(src)
 add_subdirectory(tests)
@@ -195,8 +295,48 @@ add_custom_target(
     VERBATIM
 )
 
+# check_no_na_without_dec (New)
+add_custom_target(
+    check_no_na_without_dec
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/ci/check_no_na_without_dec.py" "${CMAKE_SOURCE_DIR}"
+    COMMENT "Verifying no 'N/A' exists without '[DEC-XX]'..."
+    VERBATIM
+)
+
+# check_req_has_test_and_checklist (New)
+add_custom_target(
+    check_req_has_test_and_checklist
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/ci/check_req_has_test_and_checklist.py" "${CMAKE_SOURCE_DIR}"
+    COMMENT "Verifying Requirements <-> Tests <-> Checklist traceability..."
+    VERBATIM
+)
+
+# check_inherit_targets (New)
+add_custom_target(
+    check_inherit_targets
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/ci/check_inherit_targets.py" "${CMAKE_SOURCE_DIR}"
+    COMMENT "Verifying inheritance targets..."
+    VERBATIM
+)
+
+# arcanee_assets_verify [BUILD-16]
+add_custom_target(
+    arcanee_assets_verify
+    # Ensure assets are in bin for verification
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/assets" "${CMAKE_BINARY_DIR}/bin/assets"
+    COMMAND ${CMAKE_COMMAND} -E echo "Checking assets exist..."
+    # Portable check? "test" is unix. PowerShell/CMD distinct.
+    # CMake -E compare_files uses strict comparison.
+    # We'll rely on copy success + cmake -E explicit check?
+    # Simple check: cmake script
+    COMMAND ${Python3_EXECUTABLE} -c "import os, sys; sys.exit(0 if os.path.exists('${CMAKE_BINARY_DIR}/bin/assets/ide/treesitter/squirrel/queries/highlights.scm') else 1)"
+    COMMENT "Verifying IDE assets are staged..."
+    VERBATIM
+)
+
 # Install Resources
 install(DIRECTORY samples DESTINATION .)
+install(DIRECTORY assets DESTINATION .)
 install(FILES LICENSE DESTINATION .)
 install(FILES README.md DESTINATION .)
 

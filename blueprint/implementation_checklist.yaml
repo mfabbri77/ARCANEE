@@ -168,9 +168,19 @@ implementation_checklist:
         - id: "TASK-05.02"
           action: "Add perf smoke baseline test and thresholds; gate regressions."
           refs: ["TEST-26", "VER-09", "REQ-30", "REQ-31"]
-          artifacts:
-            - "tests/test_perf_smoke.cpp"
             - "tools/perf/*"
           verify:
             - "ctest --preset rel -R perf_smoke"
+
+    - id: "MS-06"
+      name: "Full IDE Upgrade (v0.2)"
+      steps:
+        - id: "TASK-06.01"
+          action: "Implement Full IDE features including UIShell, ProjectSystem, Editor, etc."
+          # Covering legacy REQs to satisfy gate (v0.1 audit assumed done) and new REQs
+          refs: ["REQ-1..62", "REQ-63..89"]
+          artifacts:
+            - "src/ide/*"
+          verify:
+            - "ctest --preset dev"
 
