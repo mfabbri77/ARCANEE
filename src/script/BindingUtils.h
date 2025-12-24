@@ -22,7 +22,10 @@ inline void BindFunction(HSQUIRRELVM vm, const char *name, SQFUNCTION func) {
  * Must be specialized for supported types.
  */
 template <typename T> SQRESULT GetArg(HSQUIRRELVM vm, SQInteger idx, T &out) {
-  return sq_throwerror(vm, "Unsupported argument type");
+  (void)vm;
+  (void)idx;
+  (void)out;
+  return SQ_ERROR; // Placeholder
 }
 
 template <>

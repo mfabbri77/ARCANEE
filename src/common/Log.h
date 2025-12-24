@@ -14,6 +14,7 @@
 #include <cstdarg>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <mutex>
 
 #include <functional>
@@ -80,9 +81,18 @@ public:
   }
 
   using LogCallback = std::function<void(const LogMessage &)>;
-  static void addCallback(LogCallback cb) {
+  using CallbackHandle = size_t;
+
+  static CallbackHandle addCallback(LogCallback cb) {
     std::lock_guard<std::mutex> lock(s_mutex);
-    s_callbacks.push_back(cb);
+    CallbackHandle handle = s_nextCallbackHandle++;
+    s_callbacks[handle] = cb;
+    return handle;
+  }
+
+  static void removeCallback(CallbackHandle handle) {
+    std::lock_guard<std::mutex> lock(s_mutex);
+    s_callbacks.erase(handle);
   }
 
 private:
@@ -136,14 +146,16 @@ private:
 
     // Callbacks
     LogMessage msg{level, timeStr, levelStr, buffer};
-    for (const auto &cb : s_callbacks) {
-      cb(msg);
+    for (const auto &pair : s_callbacks) {
+      pair.second(msg);
     }
   }
 
   inline static LogLevel s_minLevel = LogLevel::Info;
   inline static std::mutex s_mutex;
-  inline static std::vector<LogCallback> s_callbacks;
+  // Use map for stable removal
+  inline static std::map<CallbackHandle, LogCallback> s_callbacks;
+  inline static CallbackHandle s_nextCallbackHandle = 1;
 };
 
 // Convenience macros

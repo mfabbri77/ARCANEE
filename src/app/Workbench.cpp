@@ -44,17 +44,17 @@ bool Workbench::initialize(render::RenderDevice *device,
   scanProjects();
 
   // Register Log Callback
-  // Register Log Callback
-  arcanee::Log::addCallback([this](const arcanee::LogMessage &msg) {
-    std::lock_guard<std::mutex> lock(m_logMutex);
-    ConsoleLogEntry entry;
-    entry.level = msg.level;
-    entry.text = "[" + msg.timestamp + "] " + msg.message;
-    m_logs.push_back(entry);
-    if (m_logs.size() > 1000) {
-      m_logs.erase(m_logs.begin());
-    }
-  });
+  m_logCallbackHandle =
+      arcanee::Log::addCallback([this](const arcanee::LogMessage &msg) {
+        std::lock_guard<std::mutex> lock(m_logMutex);
+        ConsoleLogEntry entry;
+        entry.level = msg.level;
+        entry.text = "[" + msg.timestamp + "] " + msg.message;
+        m_logs.push_back(entry);
+        if (m_logs.size() > 1000) {
+          m_logs.erase(m_logs.begin());
+        }
+      });
 
   auto *pDevice = static_cast<IRenderDevice *>(device->getDevice());
   auto *pContext = static_cast<IDeviceContext *>(device->getContext());
@@ -98,6 +98,11 @@ void Workbench::shutdown() {
   if (!m_initialized)
     return;
   m_initialized = false;
+
+  if (m_logCallbackHandle != 0) {
+    arcanee::Log::removeCallback(m_logCallbackHandle);
+    m_logCallbackHandle = 0;
+  }
 
   ImGui_ImplSDL2_Shutdown();
 

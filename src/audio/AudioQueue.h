@@ -23,32 +23,38 @@ enum class AudioCommand : u8 {
   SetMasterVolume
 };
 
+struct PlayModuleData {
+  u32 handle;
+  bool loop;
+};
+struct SetVolumeData {
+  u32 handle;
+  f32 volume;
+};
+struct PlaySoundData {
+  u32 soundHandle;
+  f32 volume;
+  f32 pan;
+  bool loop;
+};
+struct StopVoiceData {
+  u32 voiceIndex;
+};
+struct MasterVolumeData {
+  f32 volume;
+};
+
 /**
  * @brief Audio command data (union for space efficiency).
  */
 struct AudioCommandData {
   AudioCommand cmd = AudioCommand::None;
   union {
-    struct {
-      u32 handle;
-      bool loop;
-    } playModule;
-    struct {
-      u32 handle;
-      f32 volume;
-    } setVolume;
-    struct {
-      u32 soundHandle;
-      f32 volume;
-      f32 pan;
-      bool loop;
-    } playSound;
-    struct {
-      u32 voiceIndex;
-    } stopVoice;
-    struct {
-      f32 volume;
-    } masterVolume;
+    PlayModuleData playModule;
+    SetVolumeData setVolume;
+    PlaySoundData playSound;
+    StopVoiceData stopVoice;
+    MasterVolumeData masterVolume;
   };
 };
 

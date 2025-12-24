@@ -63,6 +63,7 @@ private:
   bool m_showLogConsole = true;
   bool m_autoScrollLog = true;
   bool m_initialized = false;
+  size_t m_logCallbackHandle = 0;
   void drawLogConsole();
 
   struct Impl;
