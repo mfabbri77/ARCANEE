@@ -708,6 +708,56 @@ void UIShell::RenderPanes() {
     }
   }
   ImGui::End();
+
+  // Problems pane
+  if (ImGui::Begin("Problems")) {
+    auto diagnostics = m_lspClient.GetDiagnostics();
+
+    if (diagnostics.empty()) {
+      ImGui::Text("No problems");
+    } else {
+      ImGui::Text("%zu issues", diagnostics.size());
+      ImGui::Separator();
+
+      for (const auto &diag : diagnostics) {
+        ImVec4 color;
+        const char *icon;
+        switch (diag.severity) {
+        case DiagnosticSeverity::Error:
+          color = ImVec4(1, 0.3f, 0.3f, 1);
+          icon = "[E]";
+          break;
+        case DiagnosticSeverity::Warning:
+          color = ImVec4(1, 1, 0.3f, 1);
+          icon = "[W]";
+          break;
+        case DiagnosticSeverity::Information:
+          color = ImVec4(0.3f, 0.7f, 1, 1);
+          icon = "[I]";
+          break;
+        default:
+          color = ImVec4(0.7f, 0.7f, 0.7f, 1);
+          icon = "[H]";
+          break;
+        }
+
+        std::string label =
+            std::string(icon) + " " +
+            std::filesystem::path(diag.file).filename().string() + ":" +
+            std::to_string(diag.line) + " - " + diag.message;
+
+        ImGui::TextColored(color, "%s", label.c_str());
+        if (ImGui::IsItemClicked()) {
+          Document *doc = nullptr;
+          if (m_documentSystem.OpenDocument(diag.file, &doc).ok()) {
+            m_documentSystem.SetActiveDocument(doc);
+            doc->buffer.SetCursor(doc->buffer.GetLineStart(diag.line - 1));
+          }
+        }
+      }
+    }
+  }
+  ImGui::End();
 }
 
 void UIShell::RenderCommandPalette() {

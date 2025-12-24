@@ -8,6 +8,7 @@
 
 #include "DapClient.h"
 #include "DocumentSystem.h"
+#include "LspClient.h"
 #include "ParseService.h"
 #include "ProjectSystem.h"
 #include "SearchService.h"
@@ -90,6 +91,7 @@ private:
 
   TimelineStore m_timelineStore;
   DapClient m_dapClient;
+  LspClient m_lspClient;
 };
 
 } // namespace arcanee::ide
