@@ -44,7 +44,7 @@ Status DocumentSystem::OpenDocument(const std::string &path,
 
   auto newDoc = std::make_unique<Document>();
   newDoc->path = absPath;
-  newDoc->content = buffer.str();
+  newDoc->buffer.Load(buffer.str());
   newDoc->dirty = false;
 
   Document *ptr = newDoc.get();
@@ -66,7 +66,8 @@ Status DocumentSystem::SaveDocument(Document *doc) {
                                  doc->path);
   }
 
-  file.write(doc->content.c_str(), doc->content.size());
+  std::string content = doc->buffer.GetAllText();
+  file.write(content.c_str(), content.size());
   doc->dirty = false;
 
   return Status::Ok();

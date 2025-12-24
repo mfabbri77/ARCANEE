@@ -1,4 +1,5 @@
 #pragma once
+#include "TextBuffer.h"
 #include "common/Status.h"
 #include <memory>
 #include <string>
@@ -8,7 +9,7 @@ namespace arcanee::ide {
 
 struct Document {
   std::string path;
-  std::string content;
+  TextBuffer buffer;
   bool dirty = false;
 
   // Helper accessors

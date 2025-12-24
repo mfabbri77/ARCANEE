@@ -149,15 +149,131 @@ void UIShell::RenderPanes() {
   if (ImGui::Begin("Editor", nullptr, ImGuiWindowFlags_None)) {
     Document *doc = m_documentSystem.GetActiveDocument();
     if (doc) {
-      ImGui::Text("Editing: %s %s", doc->filename().c_str(),
-                  doc->dirty ? "*" : "");
-      // Requires imgui_stdlib
-      // ImGui::InputTextMultiline("##source", &doc->content, ImVec2(-FLT_MIN,
-      // -FLT_MIN), ImGuiInputTextFlags_AllowTabInput); Placeholder if stdlib
-      // not linked yet:
-      ImGui::TextWrapped("%s", doc->content.c_str());
+      // Custom Editor Logic
+      ImGui::BeginChild("TextEditor", ImVec2(0, 0), false,
+                        ImGuiWindowFlags_HorizontalScrollbar);
+
+      bool isFocused = ImGui::IsWindowFocused();
+      if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(0)) {
+        ImGui::SetWindowFocus();
+        isFocused = true;
+      }
+
+      auto &buffer = doc->buffer;
+      int totalLines = buffer.GetLineCount();
+      float lineHeight = ImGui::GetTextLineHeight();
+      float contentHeight = totalLines * lineHeight;
+
+      // Dummy widget to effectively "reserve" space creates scrollbar
+      ImGui::SetCursorPosY(contentHeight);
+      ImGui::Dummy(ImVec2(0, 0));
+
+      // Calculate visible range
+      float scrollY = ImGui::GetScrollY();
+      float windowHeight = ImGui::GetWindowHeight();
+      int firstLine = (int)(scrollY / lineHeight);
+      int linesVisible = (int)(windowHeight / lineHeight) + 2;
+      int lastLine = std::min(totalLines, firstLine + linesVisible);
+
+      ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+
+      // Render visible lines
+      for (int i = firstLine; i < lastLine; ++i) {
+        std::string line = buffer.GetLine(i);
+        ImGui::SetCursorPosY((float)i * lineHeight);
+        ImGui::TextUnformatted(line.c_str());
+      }
+
+      ImGui::PopStyleVar();
+
+      // Render Cursors
+      const auto &cursors = buffer.GetCursors();
+      auto *drawList = ImGui::GetWindowDrawList();
+      ImVec2 winPos = ImGui::GetWindowPos();
+
+      for (const auto &cursor : cursors) {
+        int line = buffer.GetLineFromOffset(cursor.head);
+        uint32_t lineStart = buffer.GetLineStart(line);
+        int col = cursor.head - lineStart;
+
+        // Calc pixel pos
+        // Hack: assuming monospace char width 7px for now, or calc
+        // Ideally: ImGui::CalcTextSize(line_substr).x
+        std::string lineStr = buffer.GetLine(line);
+        std::string subStr =
+            lineStr.substr(0, std::min((size_t)col, lineStr.size()));
+        float textWidth = ImGui::CalcTextSize(subStr.c_str()).x;
+
+        ImVec2 cursorScreenPos =
+            ImVec2(winPos.x - ImGui::GetScrollX() + textWidth,
+                   winPos.y - scrollY + (float)line * lineHeight);
+
+        drawList->AddLine(
+            cursorScreenPos,
+            ImVec2(cursorScreenPos.x, cursorScreenPos.y + lineHeight),
+            IM_COL32(255, 255, 255, 255));
+      }
+
+      // Input Handling
+      if (isFocused) {
+        auto &io = ImGui::GetIO();
+
+        // Text Input
+        for (int i = 0; i < io.InputQueueCharacters.Size; i++) {
+          char c = (char)io.InputQueueCharacters[i];
+          if (c == 0)
+            continue;
+          std::string s(1, c);
+
+          // TODO: Batch insert for multi-cursor
+          // For MVP, just handle first cursor
+          if (!cursors.empty()) {
+            uint32_t pos = cursors[0].head;
+            buffer.Insert(pos, s);
+            buffer.SetCursor(pos + 1);
+            doc->dirty = true;
+          }
+        }
+
+        // Special Keys
+        if (ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+          if (!cursors.empty()) {
+            uint32_t pos = cursors[0].head;
+            buffer.Insert(pos, "\n");
+            buffer.SetCursor(pos + 1);
+            doc->dirty = true;
+          }
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_Backspace)) {
+          if (!cursors.empty()) {
+            uint32_t pos = cursors[0].head;
+            if (pos > 0) {
+              buffer.Delete(pos - 1, 1);
+              buffer.SetCursor(pos - 1);
+              doc->dirty = true;
+            }
+          }
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
+          if (!cursors.empty()) {
+            uint32_t pos = cursors[0].head;
+            if (pos > 0)
+              buffer.SetCursor(pos - 1);
+          }
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
+          if (!cursors.empty()) {
+            uint32_t pos = cursors[0].head;
+            if (pos < buffer.GetLength())
+              buffer.SetCursor(pos + 1);
+          }
+        }
+        // Up/Down TODO
+      }
+
+      ImGui::EndChild();
     } else {
-      ImGui::TextDisabled("No active document");
+      ImGui::Text("No open document");
     }
   }
   ImGui::End();
