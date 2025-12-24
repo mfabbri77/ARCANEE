@@ -34,12 +34,22 @@ void MainThreadQueue::DrainAll() {
 // -----------------------------------------------------------------------------
 
 UIShell::UIShell(MainThreadQueue &queue) : m_queue(queue) {
-  // Load layout/persistence?
+  // Initialize services
   m_parseService.Initialize();
+  m_lspClient.Initialize();
+
+  // Initialize timeline store in project data directory
+  // MVP: Use temp path, real implementation would use project-specific path
+  m_timelineStore.Initialize("/tmp/arcanee_timeline.db");
+
+  // Load tasks from project root (if available)
+  m_taskRunner.LoadTasks(".");
 }
 
 UIShell::~UIShell() {
   m_parseService.Shutdown();
+  m_lspClient.Shutdown();
+  m_timelineStore.Shutdown();
   // Save layout?
 }
 
@@ -520,7 +530,31 @@ void UIShell::RenderPanes() {
   ImGui::End();
 
   if (ImGui::Begin("Preview")) {
-    ImGui::Text("Runtime View goes here...");
+    Document *doc = m_documentSystem.GetActiveDocument();
+
+    if (ImGui::Button("Run Preview")) {
+      if (doc) {
+        // MVP: Placeholder for runtime preview integration
+        // In full implementation, this would launch the script in embedded
+        // runtime
+        ImGui::OpenPopup("PreviewRunning");
+      }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Stop")) {
+      // Stop preview execution
+    }
+
+    ImGui::Separator();
+
+    // Preview area
+    ImGui::BeginChild("PreviewArea", ImVec2(0, 0), true);
+    ImGui::Text("Runtime Preview");
+    ImGui::TextDisabled("(Preview integration pending full Runtime binding)");
+    if (doc) {
+      ImGui::Text("Current file: %s", doc->path.c_str());
+    }
+    ImGui::EndChild();
   }
   ImGui::End();
 
