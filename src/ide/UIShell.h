@@ -6,6 +6,9 @@
 #include <string_view>
 #include <vector>
 
+#include "DocumentSystem.h"
+#include "ProjectSystem.h"
+
 // Forward declaration of ImGui structures if needed, but we typically use
 // internal dispatch.
 
@@ -64,6 +67,10 @@ private:
   // Persistence
   void LoadLayout();
   void SaveLayout();
+
+  // Core Services
+  ProjectSystem m_projectSystem;
+  DocumentSystem m_documentSystem;
 };
 
 } // namespace arcanee::ide

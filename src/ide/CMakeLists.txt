@@ -57,3 +57,12 @@ target_link_libraries(arcanee_ide PUBLIC
 )
 
 target_compile_features(arcanee_ide PUBLIC cxx_std_17)
+
+# Include imgui_stdlib for InputText with std::string
+set(IMGUI_STDLIB_PATH "${CMAKE_BINARY_DIR}/_deps/diligenttools-src/ThirdParty/imgui/misc/cpp")
+if(EXISTS "${IMGUI_STDLIB_PATH}/imgui_stdlib.cpp")
+    target_sources(arcanee_ide PRIVATE "${IMGUI_STDLIB_PATH}/imgui_stdlib.cpp")
+    target_include_directories(arcanee_ide PRIVATE "${IMGUI_STDLIB_PATH}")
+else()
+    message(WARNING "imgui_stdlib.cpp not found at ${IMGUI_STDLIB_PATH}")
+endif()

@@ -115,15 +115,50 @@ void UIShell::RenderDockspace() {
   ImGui::End();
 }
 
+// Helper for recursion
+void DrawTree(const FileNode &node,
+              std::function<void(const std::string &)> onOpen) {
+  if (node.isDirectory) {
+    bool open = ImGui::TreeNode(node.name.c_str());
+    if (open) {
+      for (const auto &child : node.children) {
+        DrawTree(child, onOpen);
+      }
+      ImGui::TreePop();
+    }
+  } else {
+    if (ImGui::Selectable(node.name.c_str())) {
+      onOpen(node.fullPath);
+    }
+  }
+}
+
 void UIShell::RenderPanes() {
-  // Placeholder Panes
+  // Project Explorer
   if (ImGui::Begin("Project Explorer")) {
-    ImGui::Text("File Tree goes here...");
+    DrawTree(m_projectSystem.GetRoot(), [this](const std::string &path) {
+      Document *doc = nullptr;
+      m_documentSystem.OpenDocument(path, &doc);
+      if (doc)
+        m_documentSystem.SetActiveDocument(doc);
+    });
   }
   ImGui::End();
 
+  // Editor Pane
   if (ImGui::Begin("Editor", nullptr, ImGuiWindowFlags_None)) {
-    ImGui::Text("Code goes here...");
+    Document *doc = m_documentSystem.GetActiveDocument();
+    if (doc) {
+      ImGui::Text("Editing: %s %s", doc->filename().c_str(),
+                  doc->dirty ? "*" : "");
+      // Requires imgui_stdlib
+      // ImGui::InputTextMultiline("##source", &doc->content, ImVec2(-FLT_MIN,
+      // -FLT_MIN), ImGuiInputTextFlags_AllowTabInput); Placeholder if stdlib
+      // not linked yet:
+      ImGui::TextWrapped("%s", doc->content.c_str());
+    } else {
+      ImGui::TextDisabled("No active document");
+    }
   }
   ImGui::End();
 
