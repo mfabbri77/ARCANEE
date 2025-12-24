@@ -17,7 +17,6 @@
 #include "Imgui/interface/ImGuiImplDiligent.hpp"
 
 // Diligent Core Headers (for casting)
-#include "Common/interface/RefCntAutoPtr.hpp"
 #include "Graphics/GraphicsEngine/interface/DeviceContext.h"
 #include "Graphics/GraphicsEngine/interface/RenderDevice.h"
 #include "Graphics/GraphicsEngine/interface/SwapChain.h"

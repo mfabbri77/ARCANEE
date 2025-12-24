@@ -4,4 +4,5 @@ build/
 *.user
 .cache/
 *.log
+compile_commands.json
 
