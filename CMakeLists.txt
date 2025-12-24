@@ -30,6 +30,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 find_package(PkgConfig REQUIRED)
 find_package(SDL2 REQUIRED)
 find_package(PhysFS REQUIRED)
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 # FetchContent for Dependencies
 include(FetchContent)
@@ -163,3 +164,19 @@ set_property(TARGET sqstdlib_static PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 # Add source directory
 add_subdirectory(src)
+
+# CI/Compliance Gates
+add_custom_target(
+    check_no_temp_dbg
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/ci/check_no_temp_dbg.py" "${CMAKE_SOURCE_DIR}"
+    COMMENT "Checking for forbidden TEMP-DBG markers..."
+    VERBATIM
+)
+
+add_custom_target(
+    check_blueprint_consistency
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/ci/check_blueprint_consistency.py" "${CMAKE_SOURCE_DIR}"
+    COMMENT "Verifying blueprint consistency and requirements traceability..."
+    VERBATIM
+)
+
