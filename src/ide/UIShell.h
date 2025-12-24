@@ -10,6 +10,7 @@
 #include "ParseService.h"
 #include "ProjectSystem.h"
 #include "SearchService.h"
+#include "TaskRunner.h"
 
 // Forward declaration of ImGui structures if needed, but we typically use
 // internal dispatch.
@@ -81,6 +82,9 @@ private:
   std::string m_searchQuery;
   bool m_searchCaseSensitive = false;
   bool m_searchRegex = false;
+
+  TaskRunner m_taskRunner;
+  int m_selectedTaskIndex = -1;
 };
 
 } // namespace arcanee::ide

@@ -525,7 +525,58 @@ void UIShell::RenderPanes() {
   ImGui::End();
 
   if (ImGui::Begin("Console")) {
-    ImGui::Text("Logs/Task Output...");
+    // Task dropdown
+    const auto &tasks = m_taskRunner.GetTasks();
+    if (!tasks.empty()) {
+      if (ImGui::BeginCombo("Task",
+                            m_selectedTaskIndex >= 0
+                                ? tasks[m_selectedTaskIndex].name.c_str()
+                                : "Select Task")) {
+        for (int i = 0; i < (int)tasks.size(); ++i) {
+          bool selected = (m_selectedTaskIndex == i);
+          if (ImGui::Selectable(tasks[i].name.c_str(), selected)) {
+            m_selectedTaskIndex = i;
+          }
+        }
+        ImGui::EndCombo();
+      }
+
+      ImGui::SameLine();
+      if (m_taskRunner.IsRunning()) {
+        if (ImGui::Button("Cancel")) {
+          m_taskRunner.Cancel();
+        }
+      } else {
+        if (ImGui::Button("Run") && m_selectedTaskIndex >= 0) {
+          m_taskRunner.RunTask(tasks[m_selectedTaskIndex].name);
+        }
+      }
+    } else {
+      ImGui::Text("No tasks.toml found");
+    }
+
+    ImGui::Separator();
+
+    // Output display
+    ImGui::BeginChild("TaskOutput", ImVec2(0, 0), true);
+    auto output = m_taskRunner.GetOutput();
+    for (const auto &line : output) {
+      // Color errors red, warnings yellow
+      if (line.find("error") != std::string::npos ||
+          line.find("Error") != std::string::npos) {
+        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%s", line.c_str());
+      } else if (line.find("warning") != std::string::npos ||
+                 line.find("Warning") != std::string::npos) {
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "%s", line.c_str());
+      } else {
+        ImGui::TextUnformatted(line.c_str());
+      }
+    }
+    // Auto-scroll to bottom
+    if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 10) {
+      ImGui::SetScrollHereY(1.0f);
+    }
+    ImGui::EndChild();
   }
   ImGui::End();
 
