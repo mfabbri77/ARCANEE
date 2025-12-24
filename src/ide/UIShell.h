@@ -11,6 +11,7 @@
 #include "ProjectSystem.h"
 #include "SearchService.h"
 #include "TaskRunner.h"
+#include "TimelineStore.h"
 
 // Forward declaration of ImGui structures if needed, but we typically use
 // internal dispatch.
@@ -85,6 +86,8 @@ private:
 
   TaskRunner m_taskRunner;
   int m_selectedTaskIndex = -1;
+
+  TimelineStore m_timelineStore;
 };
 
 } // namespace arcanee::ide

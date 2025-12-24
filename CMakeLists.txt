@@ -249,15 +249,13 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(pcre2)
 
-# SQLite (Timeline Metadata) - DEFERRED (URL fail)
-# FetchContent_Declare(
-#     sqlite3_amalgamation
-#     URL "https://github.com/mackyle/sqlite/archive/refs/tags/version-3.42.0.zip"
-#     CONFIGURE_COMMAND ${CMAKE_COMMAND} -E echo "Skipping configure"
-#     BUILD_COMMAND ${CMAKE_COMMAND} -E echo "Skipping build"
-#     INSTALL_COMMAND ${CMAKE_COMMAND} -E echo "Skipping install"
-# )
-# FetchContent_MakeAvailable(sqlite3_amalgamation)
+# SQLite (Timeline Metadata) - Use system SQLite3
+find_package(SQLite3 REQUIRED)
+if(NOT TARGET sqlite3)
+    add_library(sqlite3 INTERFACE)
+    target_include_directories(sqlite3 INTERFACE ${SQLite3_INCLUDE_DIRS})
+    target_link_libraries(sqlite3 INTERFACE ${SQLite3_LIBRARIES})
+endif()
 
 # zstd (Compression)
 FetchContent_Declare(

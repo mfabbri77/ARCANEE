@@ -581,6 +581,44 @@ void UIShell::RenderPanes() {
   ImGui::End();
 
   RenderSearchPane();
+
+  // Timeline Pane
+  if (ImGui::Begin("Local History")) {
+    Document *doc = m_documentSystem.GetActiveDocument();
+    if (doc) {
+      auto history = m_timelineStore.GetHistory(doc->path);
+
+      if (history.empty()) {
+        ImGui::Text("No history for this file.");
+      } else {
+        ImGui::Text("%zu snapshots", history.size());
+        ImGui::Separator();
+
+        for (const auto &entry : history) {
+          // Format timestamp
+          char timeBuf[64];
+          std::time_t t = (std::time_t)entry.timestamp;
+          std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S",
+                        std::localtime(&t));
+
+          std::string label = std::string(timeBuf) + " [" + entry.trigger +
+                              "] (" + std::to_string(entry.originalSize) +
+                              " bytes)";
+          if (ImGui::Selectable(label.c_str())) {
+            // Restore snapshot
+            std::string content = m_timelineStore.RestoreSnapshot(entry.id);
+            if (!content.empty()) {
+              doc->buffer.Load(content);
+              doc->dirty = true;
+            }
+          }
+        }
+      }
+    } else {
+      ImGui::Text("No document open.");
+    }
+  }
+  ImGui::End();
 }
 
 void UIShell::RenderCommandPalette() {

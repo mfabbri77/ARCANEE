@@ -17,6 +17,11 @@ target_include_directories(arcanee_ide PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/.."
 )
 
+# zstd include path (from FetchContent)
+target_include_directories(arcanee_ide PRIVATE
+    "${CMAKE_BINARY_DIR}/_deps/zstd-src/lib"
+)
+
 # Manually define tree-sitter-squirrel target since it lacks CMake
 # if(NOT TARGET tree-sitter-squirrel)
 #     set(TS_SRC "${tree-sitter-squirrel_SOURCE_DIR}/src")
@@ -47,7 +52,7 @@ target_link_libraries(arcanee_ide PUBLIC
     tree-sitter
     tree-sitter-squirrel
     pcre2-8
-    # sqlite3 - DEFERRED
+    sqlite3
     libzstd_static
     xxhash
     tomlplusplus::tomlplusplus
