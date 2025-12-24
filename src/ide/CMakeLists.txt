@@ -48,11 +48,12 @@ target_link_libraries(arcanee_ide PUBLIC
     # tree-sitter-squirrel - DEFERRED
     pcre2-8
     # sqlite3 - DEFERRED
-    zstd
+    libzstd_static
     xxhash
     tomlplusplus::tomlplusplus
     nlohmann_json::nlohmann_json
     spdlog::spdlog
+    Diligent-Imgui
 )
 
 target_compile_features(arcanee_ide PUBLIC cxx_std_17)

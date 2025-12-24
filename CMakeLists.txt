@@ -80,6 +80,13 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(DiligentTools)
 
+# Suppress warnings in Diligent-Imgui (imGuIZMO)
+if(TARGET Diligent-Imgui)
+    if(NOT MSVC)
+        target_compile_options(Diligent-Imgui PRIVATE -w)
+    endif()
+endif()
+
 # ThorVG - 2D Vector Graphics Engine
 # ThorVG uses Meson, so we build it manually from source
 FetchContent_Declare(
@@ -199,7 +206,16 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/tree-sitter/tree-sitter.git
     GIT_TAG        v0.20.9
 )
-FetchContent_MakeAvailable(tree-sitter)
+FetchContent_GetProperties(tree-sitter)
+if(NOT tree-sitter_POPULATED)
+    FetchContent_Populate(tree-sitter)
+    add_library(tree-sitter STATIC ${tree-sitter_SOURCE_DIR}/lib/src/lib.c)
+    target_include_directories(tree-sitter PUBLIC ${tree-sitter_SOURCE_DIR}/lib/include)
+    target_include_directories(tree-sitter PRIVATE ${tree-sitter_SOURCE_DIR}/lib/src)
+    if(NOT MSVC)
+        target_compile_options(tree-sitter PRIVATE -w)
+    endif()
+endif()
 
 # tree-sitter-squirrel (Grammar) - DEFERRED (Fetch fail)
 # FetchContent_Declare(
@@ -238,7 +254,11 @@ FetchContent_Declare(
     GIT_TAG        v1.5.5
     CMAKE_ARGS     -DZSTD_BUILD_PROGRAMS=OFF -DZSTD_BUILD_TESTS=OFF
 )
-FetchContent_MakeAvailable(zstd)
+FetchContent_GetProperties(zstd)
+if(NOT zstd_POPULATED)
+    FetchContent_Populate(zstd)
+    add_subdirectory(${zstd_SOURCE_DIR}/build/cmake ${zstd_BINARY_DIR})
+endif()
 
 # xxHash (Dedup)
 FetchContent_Declare(

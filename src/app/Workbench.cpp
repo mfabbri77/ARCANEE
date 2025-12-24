@@ -91,6 +91,12 @@ bool Workbench::initialize(render::RenderDevice *device,
     return false;
   }
 
+#ifdef ARCANEE_ENABLE_IDE
+  m_mainQueue = std::make_unique<ide::MainThreadQueue>();
+  m_uiShell = std::make_unique<ide::UIShell>(*m_mainQueue);
+  LOG_INFO("Workbench: UIShell initialized");
+#endif
+
   LOG_INFO("Workbench: Initialized successfully");
   m_initialized = true;
   return true;
@@ -101,10 +107,15 @@ void Workbench::shutdown() {
     return;
   m_initialized = false;
 
+#ifdef ARCANEE_ENABLE_IDE
+  m_uiShell.reset();
+  m_mainQueue.reset();
+#else
   if (m_logCallbackHandle != 0) {
     arcanee::Log::removeCallback(m_logCallbackHandle);
     m_logCallbackHandle = 0;
   }
+#endif
 
   ImGui_ImplSDL2_Shutdown();
 
@@ -146,6 +157,13 @@ void Workbench::update(double dt) {
   // NOTE: ImGuiImplDiligent::NewFrame() internally calls ImGui::NewFrame()
   // so we DO NOT call ImGui::NewFrame() here again.
 
+#ifdef ARCANEE_ENABLE_IDE
+  if (m_uiShell) {
+    m_uiShell->RenderFrame();
+  } else {
+    ImGui::Text("Error: IDE Shell not initialized");
+  }
+#else
   // Draw Main Menu
   if (ImGui::BeginMainMenuBar()) {
     if (ImGui::BeginMenu("File")) {
@@ -185,6 +203,7 @@ void Workbench::update(double dt) {
 
   // Draw Demo (Optional toggle)
   // ImGui::ShowDemoWindow();
+#endif
 
   ImGui::Render();
 }

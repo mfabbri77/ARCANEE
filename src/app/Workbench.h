@@ -9,6 +9,10 @@
 #include <string>
 #include <vector>
 
+#ifdef ARCANEE_ENABLE_IDE
+#include "ide/UIShell.h"
+#endif
+
 namespace arcanee::app {
 
 class Runtime;
@@ -35,9 +39,19 @@ public:
 
 private:
   bool m_visible = true;
+  bool m_initialized = false;
+  Runtime *m_runtime = nullptr;
+
+  struct Impl;
+  std::unique_ptr<Impl> m_impl;
+
+#ifdef ARCANEE_ENABLE_IDE
+  std::unique_ptr<ide::MainThreadQueue> m_mainQueue;
+  std::unique_ptr<ide::UIShell> m_uiShell;
+#else
+  // Legacy MVP Workbench State (Keep explicitly until removed)
 
   // Project Browser State
-  Runtime *m_runtime = nullptr;
   std::string m_projectsDir = "samples";
   std::vector<std::string> m_projectList;
   bool m_showProjectBrowser = true;
@@ -62,12 +76,9 @@ private:
   std::mutex m_logMutex;
   bool m_showLogConsole = true;
   bool m_autoScrollLog = true;
-  bool m_initialized = false;
   size_t m_logCallbackHandle = 0;
   void drawLogConsole();
-
-  struct Impl;
-  std::unique_ptr<Impl> m_impl;
+#endif
 };
 
 } // namespace arcanee::app
