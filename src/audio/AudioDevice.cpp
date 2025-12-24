@@ -98,11 +98,6 @@ void AudioDevice::audioCallback(void *userdata, u8 *stream, i32 len) {
       buffer[i] *= masterVol;
     }
   }
-
-  if (m_audioDeviceId == 0) {
-    LOG_ERROR("AudioDevice: Failed to open device: %s", SDL_GetError());
-    return false;
-  }
 }
 
 void AudioDevice::mixAudio(f32 *buffer, u32 frames) {

@@ -58,6 +58,15 @@ public:
   bool isGamepadButtonDown(int padIdx, int btn) const;
   bool isGamepadButtonPressed(int padIdx, int btn) const;
   bool isGamepadButtonReleased(int padIdx, int btn) const;
+  // Determinism & Replay
+  void startRecording();
+  void stopRecording();
+  const std::vector<InputSnapshot> &getRecordedData() const;
+
+  void startPlayback(const std::vector<InputSnapshot> &data);
+  void stopPlayback();
+  bool isPlaying() const;
+
   f32 getGamepadAxis(int padIdx, int axis) const;
 
 private:
@@ -81,6 +90,14 @@ private:
 
   // Gamepad handles (SDL_GameController*)
   std::array<SDL_GameController *, kMaxGamepads> m_controllers{};
+
+  // Replay State
+  bool m_isRecording = false;
+  std::vector<InputSnapshot> m_recordedData;
+
+  bool m_isPlaying = false;
+  std::vector<InputSnapshot> m_playbackData;
+  size_t m_playbackIndex = 0;
 };
 
 } // namespace arcanee::input

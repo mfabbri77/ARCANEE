@@ -23,7 +23,8 @@ InputManager::~InputManager() {
 bool InputManager::initialize(platform::Window *window) {
   m_window = window;
 
-  if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) != 0) {
+  if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS |
+                        SDL_INIT_VIDEO) != 0) {
     LOG_ERROR("Failed to init SDL GameController: {}", SDL_GetError());
     // Not fatal, but good to know
   }
@@ -59,20 +60,49 @@ void InputManager::update() {
   // 1. Cycle snapshots
   m_previousSnapshot = m_currentSnapshot;
 
-  // 2. Pump SDL events and update m_liveState
+  // 2. Playback Override
+  if (m_isPlaying) {
+    if (m_playbackIndex < m_playbackData.size()) {
+      m_currentSnapshot = m_playbackData[m_playbackIndex++];
+      // Sync live state for queries that might bypass snapshot (none should,
+      // but for debug)
+      m_liveState = m_currentSnapshot;
+    } else {
+      LOG_INFO("InputManager: Playback finished");
+      stopPlayback();
+      // On finish, should we revert to live input or keep last frame?
+      // Defaulting to zero/live seems safer.
+      // Let's fall through to live input for this frame or just zero out?
+      // Fallback to live input ensures control returns to user.
+      // We already called stopPlayback(), so next frame will be live.
+      // For THIS frame, let's just use zero/empty or live?
+      // Let's process live events for this frame so we don't drop a frame of
+      // input.
+      goto process_live;
+    }
+    return;
+  }
+
+process_live:
+  // 3. Pump SDL events and update m_liveState
   // Note: SDL_PumpEvents() is usually called by SDL_PollEvent()
   SDL_Event event;
   while (SDL_PollEvent(&event)) {
     processEvent(event);
   }
 
-  // 3. Update mouse coordinates in live state based on current viewport
+  // 4. Update mouse coordinates in live state based on current viewport
   // We do this every frame to ensure smoothly updated coords even if no mouse
   // event
   updateMouseCoordinates();
 
-  // 4. Freeze live state into current snapshot
+  // 5. Freeze live state into current snapshot
   m_currentSnapshot = m_liveState;
+
+  // 6. Record
+  if (m_isRecording) {
+    m_recordedData.push_back(m_currentSnapshot);
+  }
 
   // Reset per-tick accumulators in live state (e.g. wheel)
   m_liveState.mouse.wheelX = 0.0f;
@@ -335,5 +365,40 @@ f32 InputManager::getGamepadAxis(int padIdx, int axis) const {
     return 0.0f;
   return m_currentSnapshot.gamepads[padIdx].axes[axis];
 }
+
+// Determinism & Replay
+
+void InputManager::startRecording() {
+  m_isRecording = true;
+  m_recordedData.clear();
+  // Reserve some space to avoid reallocations
+  m_recordedData.reserve(3600); // 1 minute at 60fps
+}
+
+void InputManager::stopRecording() { m_isRecording = false; }
+
+const std::vector<InputSnapshot> &InputManager::getRecordedData() const {
+  return m_recordedData;
+}
+
+void InputManager::startPlayback(const std::vector<InputSnapshot> &data) {
+  m_isPlaying = true;
+  m_playbackData = data;
+  m_playbackIndex = 0;
+  // Disable recording while playing back to avoid confusion, or allow
+  // 'dubbing'? For now, exclusive.
+  if (m_isRecording) {
+    LOG_WARN("InputManager: Stopping recording to start playback");
+    m_isRecording = false;
+  }
+}
+
+void InputManager::stopPlayback() {
+  m_isPlaying = false;
+  m_playbackData.clear();
+  m_playbackIndex = 0;
+}
+
+bool InputManager::isPlaying() const { return m_isPlaying; }
 
 } // namespace arcanee::input

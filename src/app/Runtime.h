@@ -39,13 +39,19 @@ namespace arcanee::app {
  */
 class Runtime {
 public:
-  explicit Runtime(const std::string &cartridgePath);
+  explicit Runtime(const std::string &cartridgePath, bool headless = false);
   ~Runtime();
 
   int run();
 
+  // Headless mode for testing/CI (MS-02)
+  int runHeadless(int ticks);
+  u64 getSimStateHash() const;
+
   // Public for now, or make private and called from ctor
   bool loadCartridge(const std::string &path);
+
+  input::InputManager *getInputManager() const { return m_inputManager.get(); }
 
 private:
   void initSubsystems();
@@ -55,6 +61,7 @@ private:
   void draw(f64 alpha);
 
   bool m_isRunning;
+  bool m_isHeadless = false;
 
   // Subsystems
   std::unique_ptr<platform::Window> m_window;

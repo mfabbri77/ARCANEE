@@ -65,36 +65,43 @@ set(APP_SOURCES
     app/Runtime.cpp
 )
 
-add_executable(arcanee
-    ${APP_SOURCES}
-    ${PLATFORM_SOURCES}
+add_library(vfs STATIC
     ${VFS_SOURCES}
+)
+target_include_directories(vfs PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    ${PHYSFS_INCLUDE_DIRS}
+)
+target_link_libraries(vfs PRIVATE
+    ${PHYSFS_LIBRARIES}
+)
+target_compile_features(vfs PUBLIC cxx_std_17)
+
+add_library(common INTERFACE)
+target_include_directories(common INTERFACE
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_BINARY_DIR}/generated"
+)
+
+# Link common to vfs
+target_link_libraries(vfs PRIVATE common)
+
+
+
+add_library(arcanee_core STATIC
+    ${PLATFORM_SOURCES}
     ${RUNTIME_SOURCES}
     ${SCRIPT_SOURCES}
     ${RENDER_SOURCES}
     ${AUDIO_SOURCES}
     ${INPUT_SOURCES}
+    app/Runtime.cpp
 )
 
-# Include directories
-target_include_directories(arcanee PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${CMAKE_BINARY_DIR}/generated"
-    "${squirrel_SOURCE_DIR}/include"
-    ${SDL2_INCLUDE_DIRS}
-    ${PHYSFS_INCLUDE_DIRS}
-    ${LIBOPENMPT_INCLUDE_DIRS}
-)
-
-# DiligentCore as SYSTEM to suppress warnings from their headers
-target_include_directories(arcanee SYSTEM PRIVATE
-    "${diligentcore_SOURCE_DIR}"
-)
-
-# Link libraries
-target_link_libraries(arcanee PRIVATE
+target_link_libraries(arcanee_core PUBLIC
+    vfs
+    common
     SDL2::SDL2
-    ${PHYSFS_LIBRARIES}
     squirrel_static
     sqstdlib_static
     Diligent-GraphicsEngineVk-static
@@ -104,18 +111,38 @@ target_link_libraries(arcanee PRIVATE
     ${LIBOPENMPT_LIBRARIES}
 )
 
-# Compilation features
-target_compile_features(arcanee PRIVATE cxx_std_17)
+target_include_directories(arcanee_core PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_BINARY_DIR}/generated"
+    "${squirrel_SOURCE_DIR}/include"
+    ${SDL2_INCLUDE_DIRS}
+    ${PHYSFS_INCLUDE_DIRS}
+    ${LIBOPENMPT_INCLUDE_DIRS}
+)
+
+target_include_directories(arcanee_core SYSTEM PUBLIC
+    "${diligentcore_SOURCE_DIR}"
+)
+
+target_compile_features(arcanee_core PUBLIC cxx_std_17)
 
 # Optional feature defines
 if(LIBOPENMPT_FOUND)
-    target_compile_definitions(arcanee PRIVATE HAS_LIBOPENMPT)
+    target_compile_definitions(arcanee_core PUBLIC HAS_LIBOPENMPT)
 endif()
 
 # Warnings
 if(MSVC)
-    target_compile_options(arcanee PRIVATE /W4 /WX)
+    target_compile_options(arcanee_core PRIVATE /W4 /WX)
 else()
-    target_compile_options(arcanee PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(arcanee_core PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
+
+
+add_executable(arcanee
+    app/main.cpp
+)
+
+target_link_libraries(arcanee PRIVATE arcanee_core)
+
 

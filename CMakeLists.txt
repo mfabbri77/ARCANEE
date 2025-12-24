@@ -164,6 +164,7 @@ set_property(TARGET sqstdlib_static PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 # Add source directory
 add_subdirectory(src)
+add_subdirectory(tests)
 
 # CI/Compliance Gates
 add_custom_target(
