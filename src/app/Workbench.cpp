@@ -40,6 +40,7 @@ bool Workbench::initialize(render::RenderDevice *device,
   LOG_INFO("Workbench: Initializing...");
   m_runtime = runtime;
 
+#ifndef ARCANEE_ENABLE_IDE
   scanProjects();
 
   // Register Log Callback
@@ -54,6 +55,7 @@ bool Workbench::initialize(render::RenderDevice *device,
           m_logs.erase(m_logs.begin());
         }
       });
+#endif
 
   auto *pDevice = static_cast<IRenderDevice *>(device->getDevice());
   auto *pContext = static_cast<IDeviceContext *>(device->getContext());
@@ -208,6 +210,7 @@ void Workbench::update(double dt) {
   ImGui::Render();
 }
 
+#ifndef ARCANEE_ENABLE_IDE
 void Workbench::scanProjects() {
   m_projectList.clear();
   try {
@@ -375,6 +378,7 @@ void Workbench::drawLogConsole() {
   }
   ImGui::End();
 }
+#endif // ARCANEE_ENABLE_IDE
 
 void Workbench::render(render::RenderDevice *device) {
   if (!m_visible)

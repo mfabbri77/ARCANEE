@@ -194,6 +194,7 @@ option(ARCANEE_ENABLE_TASKS "Enable Task Runner" ON)
 
 if(ARCANEE_ENABLE_IDE)
     message(STATUS "Build: Full IDE Enabled")
+    add_compile_definitions(ARCANEE_ENABLE_IDE)
 endif()
 
 # ==========================================
