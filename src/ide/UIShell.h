@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "DocumentSystem.h"
+#include "ParseService.h"
 #include "ProjectSystem.h"
 
 // Forward declaration of ImGui structures if needed, but we typically use
@@ -71,6 +72,7 @@ private:
   // Core Services
   ProjectSystem m_projectSystem;
   DocumentSystem m_documentSystem;
+  ParseService m_parseService;
 };
 
 } // namespace arcanee::ide

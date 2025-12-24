@@ -217,16 +217,28 @@ if(NOT tree-sitter_POPULATED)
     endif()
 endif()
 
-# tree-sitter-squirrel (Grammar) - DEFERRED (Fetch fail)
-# FetchContent_Declare(
-#     tree-sitter-squirrel
-#     GIT_REPOSITORY https://github.com/gbalats/tree-sitter-squirrel.git
-#     GIT_TAG        master
-#     CONFIGURE_COMMAND ${CMAKE_COMMAND} -E echo "Skipping configure"
-#     BUILD_COMMAND ${CMAKE_COMMAND} -E echo "Skipping build"
-#     INSTALL_COMMAND ${CMAKE_COMMAND} -E echo "Skipping install"
-# )
-# FetchContent_MakeAvailable(tree-sitter-squirrel)
+# tree-sitter-squirrel (Grammar)
+FetchContent_Declare(
+    tree-sitter-squirrel
+    GIT_REPOSITORY https://github.com/tree-sitter-grammars/tree-sitter-squirrel.git
+    GIT_TAG        v1.0.0
+)
+FetchContent_GetProperties(tree-sitter-squirrel)
+if(NOT tree-sitter-squirrel_POPULATED)
+    FetchContent_Populate(tree-sitter-squirrel)
+    # The grammar repo usually has a src/parser.c and src/scanner.c (if external scanner used)
+    # We compile them into a library.
+    file(GLOB TS_SQUIRREL_SOURCES 
+        "${tree-sitter-squirrel_SOURCE_DIR}/src/parser.c"
+        "${tree-sitter-squirrel_SOURCE_DIR}/src/scanner.c"
+    )
+    add_library(tree-sitter-squirrel STATIC ${TS_SQUIRREL_SOURCES})
+    target_include_directories(tree-sitter-squirrel PUBLIC "${tree-sitter-squirrel_SOURCE_DIR}/src")
+    # Link against tree-sitter core headers if needed (usually just standard C)
+    if(NOT MSVC)
+        target_compile_options(tree-sitter-squirrel PRIVATE -w)
+    endif()
+endif()
 
 # PCRE2 (Regex)
 FetchContent_Declare(

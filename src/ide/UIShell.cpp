@@ -35,9 +35,11 @@ void MainThreadQueue::DrainAll() {
 
 UIShell::UIShell(MainThreadQueue &queue) : m_queue(queue) {
   // Load layout/persistence?
+  m_parseService.Initialize();
 }
 
 UIShell::~UIShell() {
+  m_parseService.Shutdown();
   // Save layout?
 }
 
@@ -149,6 +151,12 @@ void UIShell::RenderPanes() {
   if (ImGui::Begin("Editor", nullptr, ImGuiWindowFlags_None)) {
     Document *doc = m_documentSystem.GetActiveDocument();
     if (doc) {
+      // Trigger parse if dirty or first open?
+      // MVP: Trigger parse on every frame dirty check?
+      // Better: DocumentSystem tells us, or we poll revision.
+      // Let's assume on keypress input we trigger it.
+
+      // ... (rendering logic below)
       // Custom Editor Logic
       ImGui::BeginChild("TextEditor", ImVec2(0, 0), false,
                         ImGuiWindowFlags_HorizontalScrollbar);
@@ -183,11 +191,57 @@ void UIShell::RenderPanes() {
       // selection, then text. We'll render text first, then simple cursors.
       // Selection requires calculation.
 
+      // Fetch Highlights
+      const ParseResult *parseRes = m_parseService.GetHighlights(doc->path);
+
       // 1. Render Text
       for (int i = firstLine; i < lastLine; ++i) {
         std::string line = buffer.GetLine(i);
+        uint32_t lineStart = buffer.GetLineStart(i); // Offset
+
         ImGui::SetCursorPosY((float)i * lineHeight);
-        ImGui::TextUnformatted(line.c_str());
+
+        // Standard render
+        // ImGui::TextUnformatted(line.c_str());
+
+        // Highlighted render
+        if (parseRes && !parseRes->highlights.empty()) {
+          float x = 0;
+          size_t currentPos = 0;
+          while (currentPos < line.size()) {
+            uint32_t absPos = lineStart + currentPos;
+            // Find span covering absPos
+            // Optimization: Use interval tree or sorted vector search.
+            // For MVP: Linear scan or just default color if no span.
+            // We need a proper span iterator for the line.
+
+            uint32_t color = IM_COL32(220, 220, 220, 255); // Default Text
+            size_t chunkLen = line.size() - currentPos;
+
+            for (const auto &span : parseRes->highlights) {
+              if (absPos >= span.startByte && absPos < span.endByte) {
+                color = span.color;
+                chunkLen = std::min((uint32_t)chunkLen, span.endByte - absPos);
+                break;
+              } else if (span.startByte > absPos) {
+                chunkLen =
+                    std::min((uint32_t)chunkLen, span.startByte - absPos);
+                // We can break if sorted? Assumed sorted.
+              }
+            }
+
+            std::string chunk = line.substr(currentPos, chunkLen);
+            ImGui::PushStyleColor(ImGuiCol_Text, color);
+            ImGui::TextUnformatted(chunk.c_str());
+            ImGui::PopStyleColor();
+            ImGui::SameLine(0, 0);
+
+            currentPos += chunkLen;
+          }
+          ImGui::NewLine();
+        } else {
+          ImGui::TextUnformatted(line.c_str());
+        }
       }
       ImGui::PopStyleVar();
 
@@ -293,6 +347,8 @@ void UIShell::RenderPanes() {
             buffer.Insert(pos, s);
             buffer.SetCursor(pos + 1);
             doc->dirty = true;
+            m_parseService.UpdateDocument(doc, buffer.GetAllText(),
+                                          0); // Trigger Parse
           }
         }
         if (!io.InputQueueCharacters.empty())

@@ -45,7 +45,7 @@ target_link_libraries(arcanee_ide PUBLIC
     common
     # Dependencies
     tree-sitter
-    # tree-sitter-squirrel - DEFERRED
+    tree-sitter-squirrel
     pcre2-8
     # sqlite3 - DEFERRED
     libzstd_static
