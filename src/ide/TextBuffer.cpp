@@ -71,42 +71,75 @@ void TextBuffer::Insert(uint32_t offset, const std::string &text) {
 
   if (m_pieces.empty()) {
     m_pieces.push_back(newPiece);
-    RebuildLineIndex();
-    return;
-  }
+  } else {
+    // Find split point
+    uint32_t currentPos = 0;
+    bool inserted = false;
+    for (auto it = m_pieces.begin(); it != m_pieces.end(); ++it) {
+      if (offset >= currentPos && offset < currentPos + it->length) {
+        uint32_t relOffset = offset - currentPos;
 
-  // Find split point
-  uint32_t currentPos = 0;
-  for (auto it = m_pieces.begin(); it != m_pieces.end(); ++it) {
-    if (offset >= currentPos && offset < currentPos + it->length) {
-      uint32_t relOffset = offset - currentPos;
+        if (relOffset == 0) {
+          m_pieces.insert(it, newPiece);
+        } else {
+          // Split
+          Piece left = *it;
+          left.length = relOffset;
 
-      if (relOffset == 0) {
-        m_pieces.insert(it, newPiece);
-      } else {
-        // Split
-        Piece left = *it;
-        left.length = relOffset;
+          Piece right = *it;
+          right.start += relOffset;
+          right.length -= relOffset;
 
-        Piece right = *it;
-        right.start += relOffset;
-        right.length -= relOffset;
-
-        *it = left;
-        it = m_pieces.insert(it + 1, newPiece);
-        m_pieces.insert(it + 1, right);
+          *it = left;
+          it = m_pieces.insert(it + 1, newPiece);
+          m_pieces.insert(it + 1, right);
+        }
+        inserted = true;
+        break;
       }
-      RebuildLineIndex();
-      return;
+      currentPos += it->length;
     }
-    currentPos += it->length;
+    if (!inserted && offset == currentPos) {
+      m_pieces.push_back(newPiece);
+    }
   }
 
-  // Append if at end
-  if (offset == currentPos) {
-    m_pieces.push_back(newPiece);
-  }
   RebuildLineIndex();
+
+  // Record Action
+  if (!m_isUndoing) {
+    RecordAction(EditAction::Type::Insert, offset, text);
+    m_redoStack.clear();
+  }
+}
+
+std::string TextBuffer::GetText(uint32_t offset, uint32_t length) const {
+  if (length == 0)
+    return "";
+  uint32_t endOffset = offset + length;
+
+  std::string text;
+  text.reserve(length);
+
+  uint32_t cur = 0;
+  for (const auto &p : m_pieces) {
+    if (cur + p.length <= offset) {
+      cur += p.length;
+      continue;
+    }
+    if (cur >= endOffset)
+      break;
+
+    uint32_t startInPiece = (offset > cur) ? (offset - cur) : 0;
+    uint32_t endInPiece =
+        (endOffset < cur + p.length) ? (endOffset - cur) : p.length;
+
+    const std::string &buf =
+        (p.source == Piece::Source::Original) ? m_original : m_add;
+    text.append(buf, p.start + startInPiece, endInPiece - startInPiece);
+    cur += p.length;
+  }
+  return text;
 }
 
 void TextBuffer::Delete(uint32_t offset, uint32_t length) {
@@ -114,14 +147,12 @@ void TextBuffer::Delete(uint32_t offset, uint32_t length) {
     return;
   uint32_t endOffset = offset + length;
 
-  // Naive implementation: Iterate, split/shorten/remove pieces in range
-  // A better approach usually involves building a new piece list for the
-  // affected range. For MVP, we'll do simple split logic, recursively or
-  // iteratively. Actually, simplest is: Find First Piece affected, Find Last
-  // Piece affected. Fix boundaries, remove middle ones.
-
-  // IMPLEMENTATION DEFERRED slightly or simplified for step-1 check.
-  // Let's implement full logic:
+  // Capture deleted text for Undo if recording
+  if (!m_isUndoing) {
+    std::string deletedText = GetText(offset, length);
+    RecordAction(EditAction::Type::Delete, offset, deletedText);
+    m_redoStack.clear();
+  }
 
   std::vector<Piece> newPieces;
   uint32_t currentPos = 0;
@@ -158,6 +189,99 @@ void TextBuffer::Delete(uint32_t offset, uint32_t length) {
   }
   m_pieces = newPieces;
   RebuildLineIndex();
+}
+
+void TextBuffer::Undo() {
+  if (!CanUndo())
+    return;
+
+  m_isUndoing = true;
+  int batch = m_undoStack.back().batchId;
+
+  do {
+    EditAction action = m_undoStack.back();
+    m_undoStack.pop_back();
+
+    // Reverse Action
+    if (action.type == EditAction::Type::Insert) {
+      Delete(action.offset, (uint32_t)action.text.size());
+    } else {
+      Insert(action.offset, action.text);
+    }
+
+    SetCursors(action.preCursors);
+
+    // Push to Redo
+    action.postCursors =
+        m_cursors; // Capture state after undo as "post" for redo? No, Redo
+                   // needs to end up here. Wait, Redo executes original action.
+                   // Result state is postCursors.
+    m_redoStack.push_back(action);
+
+  } while (batch != 0 && !m_undoStack.empty() &&
+           m_undoStack.back().batchId == batch);
+
+  m_isUndoing = false;
+}
+
+void TextBuffer::Redo() {
+  if (!CanRedo())
+    return;
+
+  m_isUndoing = true;
+  int batch = m_redoStack.back().batchId;
+
+  do {
+    EditAction action = m_redoStack.back();
+    m_redoStack.pop_back();
+
+    if (action.type == EditAction::Type::Insert) {
+      Insert(action.offset, action.text);
+    } else {
+      Delete(action.offset, (uint32_t)action.text.size());
+    }
+
+    // Restore cursors? Usually post-action state.
+    // Or let new action set it? We rely on recorded.
+    // We didn't record postCursors during original action though.
+    // Let's rely on manual cursor set or logic.
+    // For now, minimal.
+
+    // Push back to Undo
+    m_undoStack.push_back(action);
+
+  } while (batch != 0 && !m_redoStack.empty() &&
+           m_redoStack.back().batchId == batch);
+
+  m_isUndoing = false;
+}
+
+bool TextBuffer::CanUndo() const { return !m_undoStack.empty(); }
+bool TextBuffer::CanRedo() const { return !m_redoStack.empty(); }
+
+void TextBuffer::BeginBatch() {
+  m_batchDepth++;
+  if (m_batchDepth == 1)
+    m_currentBatchId++;
+}
+void TextBuffer::EndBatch() {
+  if (m_batchDepth > 0)
+    m_batchDepth--;
+}
+
+void TextBuffer::RecordAction(EditAction::Type type, uint32_t offset,
+                              const std::string &text) {
+  EditAction action;
+  action.type = type;
+  action.offset = offset;
+  action.text = text;
+  action.preCursors = m_cursors;
+  action.batchId = (m_batchDepth > 0) ? m_currentBatchId : 0;
+  m_undoStack.push_back(action);
+}
+
+void TextBuffer::SetCursors(const std::vector<Cursor> &cursors) {
+  m_cursors = cursors;
 }
 
 void TextBuffer::RebuildLineIndex() {

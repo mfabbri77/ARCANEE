@@ -178,45 +178,98 @@ void UIShell::RenderPanes() {
       ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
 
       // Render visible lines
+      // Render visible lines and Selections
+      // This is a simplified single-layer pass. Better: Render background
+      // selection, then text. We'll render text first, then simple cursors.
+      // Selection requires calculation.
+
+      // 1. Render Text
       for (int i = firstLine; i < lastLine; ++i) {
         std::string line = buffer.GetLine(i);
         ImGui::SetCursorPosY((float)i * lineHeight);
         ImGui::TextUnformatted(line.c_str());
       }
-
       ImGui::PopStyleVar();
 
-      // Render Cursors
+      // 2. Render Cursors & Selection
       const auto &cursors = buffer.GetCursors();
       auto *drawList = ImGui::GetWindowDrawList();
       ImVec2 winPos = ImGui::GetWindowPos();
+      float scrollX = ImGui::GetScrollX();
 
       for (const auto &cursor : cursors) {
-        int line = buffer.GetLineFromOffset(cursor.head);
-        uint32_t lineStart = buffer.GetLineStart(line);
-        int col = cursor.head - lineStart;
+        // Calculate Head Position
+        int headLine = buffer.GetLineFromOffset(cursor.head);
+        uint32_t headLineStart = buffer.GetLineStart(headLine);
+        int headCol = cursor.head - headLineStart;
 
-        // Calc pixel pos
-        // Hack: assuming monospace char width 7px for now, or calc
-        // Ideally: ImGui::CalcTextSize(line_substr).x
-        std::string lineStr = buffer.GetLine(line);
-        std::string subStr =
-            lineStr.substr(0, std::min((size_t)col, lineStr.size()));
-        float textWidth = ImGui::CalcTextSize(subStr.c_str()).x;
+        std::string headLineStr = buffer.GetLine(headLine);
+        std::string headSub = headLineStr.substr(
+            0, std::min((size_t)headCol, headLineStr.size()));
+        float headX = ImGui::CalcTextSize(headSub.c_str()).x;
+        ImVec2 headScreenPos =
+            ImVec2(winPos.x - scrollX + headX,
+                   winPos.y - scrollY + (float)headLine * lineHeight);
 
-        ImVec2 cursorScreenPos =
-            ImVec2(winPos.x - ImGui::GetScrollX() + textWidth,
-                   winPos.y - scrollY + (float)line * lineHeight);
+        // Draw Cursor
+        drawList->AddLine(headScreenPos,
+                          ImVec2(headScreenPos.x, headScreenPos.y + lineHeight),
+                          IM_COL32(255, 255, 255, 255));
 
-        drawList->AddLine(
-            cursorScreenPos,
-            ImVec2(cursorScreenPos.x, cursorScreenPos.y + lineHeight),
-            IM_COL32(255, 255, 255, 255));
+        // Draw Selection (if anchor != head)
+        if (cursor.anchor != cursor.head) {
+          // Simplified: Only support single-line selection visual correctly for
+          // now or simple range Full multi-line selection rendering requires
+          // iterating lines between anchor and head.
+          int anchorLine = buffer.GetLineFromOffset(cursor.anchor);
+          uint32_t anchorLineStart = buffer.GetLineStart(anchorLine);
+          int anchorCol = cursor.anchor - anchorLineStart;
+
+          // Normalize start/end
+          uint32_t start = std::min(cursor.head, cursor.anchor);
+          uint32_t end = std::max(cursor.head, cursor.anchor);
+
+          int startL = buffer.GetLineFromOffset(start);
+          int endL = buffer.GetLineFromOffset(end);
+
+          for (int l = startL; l <= endL; ++l) {
+            uint32_t ls = buffer.GetLineStart(l);
+            std::string lStr = buffer.GetLine(l);
+
+            int colStart = (l == startL) ? (start - ls) : 0;
+            int colEnd = (l == endL)
+                             ? (end - ls)
+                             : (int)lStr.size(); // TODO: +1 for newline visual?
+
+            std::string preStr =
+                lStr.substr(0, std::min((size_t)colStart, lStr.size()));
+            std::string selStr =
+                lStr.substr(std::min((size_t)colStart, lStr.size()),
+                            std::max(0, colEnd - colStart));
+
+            float x1 = ImGui::CalcTextSize(preStr.c_str()).x;
+            float w = ImGui::CalcTextSize(selStr.c_str()).x;
+            if (w == 0)
+              w = 5; // Width for empty line selection
+
+            ImVec2 pMin(winPos.x - scrollX + x1,
+                        winPos.y - scrollY + (float)l * lineHeight);
+            ImVec2 pMax(pMin.x + w, pMin.y + lineHeight);
+
+            drawList->AddRectFilled(
+                pMin, pMax, IM_COL32(0, 120, 215, 100)); // Transparent Blue
+          }
+        }
       }
 
       // Input Handling
       if (isFocused) {
         auto &io = ImGui::GetIO();
+        bool ctrl = io.KeyCtrl;
+        bool shift = io.KeyShift;
+
+        if (!io.InputQueueCharacters.empty())
+          buffer.BeginBatch();
 
         // Text Input
         for (int i = 0; i < io.InputQueueCharacters.Size; i++) {
@@ -225,50 +278,182 @@ void UIShell::RenderPanes() {
             continue;
           std::string s(1, c);
 
-          // TODO: Batch insert for multi-cursor
-          // For MVP, just handle first cursor
           if (!cursors.empty()) {
+            // TODO: Multi-cursor batch
             uint32_t pos = cursors[0].head;
+            // If selection, delete first
+            if (cursors[0].head != cursors[0].anchor) {
+              uint32_t start = std::min(cursors[0].head, cursors[0].anchor);
+              uint32_t len =
+                  std::max(cursors[0].head, cursors[0].anchor) - start;
+              buffer.Delete(start, len);
+              pos = start;
+              buffer.SetCursor(start);
+            }
             buffer.Insert(pos, s);
             buffer.SetCursor(pos + 1);
             doc->dirty = true;
           }
         }
+        if (!io.InputQueueCharacters.empty())
+          buffer.EndBatch();
 
-        // Special Keys
-        if (ImGui::IsKeyPressed(ImGuiKey_Enter)) {
-          if (!cursors.empty()) {
+        // Shortcuts
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_Z)) {
+          if (shift)
+            buffer.Redo(); // Ctrl+Shift+Z
+          else
+            buffer.Undo();
+          doc->dirty = true; // Heuristic
+        }
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_Y)) {
+          buffer.Redo();
+          doc->dirty = true;
+        }
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_A)) {
+          Cursor c;
+          c.anchor = 0;
+          c.head = buffer.GetLength();
+          buffer.SetCursors({c});
+        }
+
+        // Clipboard Copy
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_C)) {
+          std::string allText;
+          for (const auto &c : cursors) {
+            if (c.head != c.anchor) {
+              uint32_t start = std::min(c.head, c.anchor);
+              uint32_t len = std::max(c.head, c.anchor) - start;
+              if (!allText.empty())
+                allText += "\n";
+              allText += buffer.GetText(start, len);
+            }
+          }
+          if (!allText.empty()) {
+            ImGui::SetClipboardText(allText.c_str());
+          }
+        }
+
+        // Clipboard Cut
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_X)) {
+          std::string allText;
+          // Capture first
+          for (const auto &c : cursors) {
+            if (c.head != c.anchor) {
+              uint32_t start = std::min(c.head, c.anchor);
+              uint32_t len = std::max(c.head, c.anchor) - start;
+              if (!allText.empty())
+                allText += "\n";
+              allText += buffer.GetText(start, len);
+            }
+          }
+          if (!allText.empty()) {
+            ImGui::SetClipboardText(allText.c_str());
+
+            buffer.BeginBatch();
+            // Naive single-cursor cut for now or multi-cursor if no overlap
+            // Issue: Deleting affects subsequent indices.
+            // MVP hack: Just delete first cursor's selection to avoid
+            // corruption.
+            // TODO: Sort cursors descending to handle multi cut safely.
+            if (cursors.size() > 0 && cursors[0].head != cursors[0].anchor) {
+              uint32_t start = std::min(cursors[0].head, cursors[0].anchor);
+              uint32_t len =
+                  std::max(cursors[0].head, cursors[0].anchor) - start;
+              buffer.Delete(start, len);
+              buffer.SetCursor(start);
+              doc->dirty = true;
+            }
+            buffer.EndBatch();
+          }
+        }
+
+        // Clipboard Paste
+        if (ctrl && ImGui::IsKeyPressed(ImGuiKey_V)) {
+          const char *clip = ImGui::GetClipboardText();
+          if (clip && cursors.size() > 0) {
+            buffer.BeginBatch(); // Treat paste as atomic
             uint32_t pos = cursors[0].head;
-            buffer.Insert(pos, "\n");
-            buffer.SetCursor(pos + 1);
+            // Replace selection if exists
+            if (cursors[0].head != cursors[0].anchor) {
+              uint32_t start = std::min(cursors[0].head, cursors[0].anchor);
+              uint32_t len =
+                  std::max(cursors[0].head, cursors[0].anchor) - start;
+              buffer.Delete(start, len);
+              pos = start;
+            }
+            buffer.Insert(pos, clip);
+            buffer.SetCursor(pos + strlen(clip));
+            buffer.EndBatch();
             doc->dirty = true;
           }
         }
-        if (ImGui::IsKeyPressed(ImGuiKey_Backspace)) {
-          if (!cursors.empty()) {
-            uint32_t pos = cursors[0].head;
-            if (pos > 0) {
-              buffer.Delete(pos - 1, 1);
-              buffer.SetCursor(pos - 1);
-              doc->dirty = true;
-            }
-          }
-        }
+        // Navigation
         if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
           if (!cursors.empty()) {
             uint32_t pos = cursors[0].head;
             if (pos > 0)
-              buffer.SetCursor(pos - 1);
+              pos--;
+
+            if (shift) {
+              Cursor c = cursors[0];
+              c.head = pos;
+              std::vector<Cursor> newCs = {c};
+              buffer.SetCursors(newCs);
+            } else {
+              buffer.SetCursor(pos);
+            }
           }
         }
         if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
           if (!cursors.empty()) {
             uint32_t pos = cursors[0].head;
             if (pos < buffer.GetLength())
-              buffer.SetCursor(pos + 1);
+              pos++;
+
+            if (shift) {
+              Cursor c = cursors[0];
+              c.head = pos;
+              std::vector<Cursor> newCs = {c};
+              buffer.SetCursors(newCs);
+            } else {
+              buffer.SetCursor(pos);
+            }
           }
         }
-        // Up/Down TODO
+        // Backspace
+        if (ImGui::IsKeyPressed(ImGuiKey_Backspace)) {
+          if (!cursors.empty()) {
+            buffer.BeginBatch();
+            // Handle selection delete
+            if (cursors[0].head != cursors[0].anchor) {
+              uint32_t start = std::min(cursors[0].head, cursors[0].anchor);
+              uint32_t len =
+                  std::max(cursors[0].head, cursors[0].anchor) - start;
+              buffer.Delete(start, len);
+              buffer.SetCursor(start);
+            } else {
+              uint32_t pos = cursors[0].head;
+              if (pos > 0) {
+                buffer.Delete(pos - 1, 1);
+                buffer.SetCursor(pos - 1);
+              }
+            }
+            buffer.EndBatch();
+            doc->dirty = true;
+          }
+        }
+        // Enter
+        if (ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+          if (!cursors.empty()) {
+            buffer.BeginBatch();
+            uint32_t pos = cursors[0].head;
+            buffer.Insert(pos, "\n");
+            buffer.SetCursor(pos + 1);
+            buffer.EndBatch();
+            doc->dirty = true;
+          }
+        }
       }
 
       ImGui::EndChild();
