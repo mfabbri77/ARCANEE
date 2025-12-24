@@ -200,6 +200,12 @@ void Runtime::initSubsystems() {
       LOG_ERROR("Failed to initialize Workbench");
       // Non-fatal?
     }
+    // Forward SDL events to Workbench for ImGui input
+    m_window->setEventCallback([this](const SDL_Event &event) {
+      if (m_workbench) {
+        m_workbench->handleInput(&event);
+      }
+    });
   }
 
   m_isRunning = true;
@@ -298,7 +304,13 @@ int Runtime::run() {
       accumulator = 0.0;
     }
 
-    // 4. Draw
+    // 4. Update Workbench (ImGui - once per visual frame, NOT in fixed
+    // timestep)
+    if (m_workbench) {
+      m_workbench->update(frameTime);
+    }
+
+    // 5. Draw
     double alpha = accumulator / kDtFixed;
     alpha = std::clamp(alpha, 0.0, 1.0);
     draw(alpha);
@@ -380,7 +392,12 @@ void Runtime::draw(f64 alpha) {
                            render::PresentMode::Fit);
   }
 
-  // 5. Present swapchain
+  // 5. Render Workbench (ImGui overlay)
+  if (m_workbench) {
+    m_workbench->render(m_renderDevice.get());
+  }
+
+  // 6. Present swapchain
   if (m_renderDevice) {
     m_renderDevice->present();
   }

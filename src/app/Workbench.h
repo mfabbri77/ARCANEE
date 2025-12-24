@@ -34,7 +34,7 @@ public:
   bool isVisible() const { return m_visible; }
 
 private:
-  bool m_visible = false;
+  bool m_visible = true;
 
   // Project Browser State
   Runtime *m_runtime = nullptr;

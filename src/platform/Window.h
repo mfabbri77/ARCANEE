@@ -23,6 +23,7 @@
  */
 
 #include <SDL.h>
+#include <functional>
 #include <string>
 
 namespace arcanee::platform {
@@ -95,6 +96,14 @@ public:
    * This should be called once per frame to update the window state.
    */
   void pollEvents();
+
+  /**
+   * @brief Set a callback to receive all SDL events.
+   *
+   * The callback is invoked for each event before internal processing.
+   */
+  using EventCallback = std::function<void(const SDL_Event &)>;
+  void setEventCallback(EventCallback cb) { m_eventCallback = std::move(cb); }
 
   /**
    * @brief Check if the window should close.
@@ -198,6 +207,7 @@ public:
 
 private:
   SDL_Window *m_window = nullptr;
+  EventCallback m_eventCallback;
 
   // State flags
   bool m_shouldClose = false;

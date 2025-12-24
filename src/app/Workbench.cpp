@@ -65,11 +65,14 @@ bool Workbench::initialize(render::RenderDevice *device,
     return false;
   }
 
-  const auto &SCDesc = pSwapChain->GetDesc();
+  auto SCDesc = pSwapChain->GetDesc();
 
   // Create ImGui Diligent Implementation
+  // NOTE: We render ImGui directly to swapchain (no depth buffer), so we
+  // must set depth format to UNKNOWN.
   try {
-    ImGuiDiligentCreateInfo CI(pDevice, SCDesc);
+    ImGuiDiligentCreateInfo CI(pDevice, SCDesc.ColorBufferFormat,
+                               TEX_FORMAT_UNKNOWN);
     m_impl->pImguiDiligent = std::make_unique<ImGuiImplDiligent>(CI);
   } catch (...) {
     LOG_ERROR("Workbench: Failed to create ImGuiImplDiligent");
@@ -141,7 +144,8 @@ void Workbench::update(double dt) {
                                    static_cast<Uint32>(io.DisplaySize.y),
                                    SURFACE_TRANSFORM_IDENTITY);
 
-  ImGui::NewFrame();
+  // NOTE: ImGuiImplDiligent::NewFrame() internally calls ImGui::NewFrame()
+  // so we DO NOT call ImGui::NewFrame() here again.
 
   // Draw Main Menu
   if (ImGui::BeginMainMenuBar()) {

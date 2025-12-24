@@ -90,6 +90,11 @@ void Window::pollEvents() {
 
   SDL_Event event;
   while (SDL_PollEvent(&event)) {
+    // Forward to callback first (for ImGui etc.)
+    if (m_eventCallback) {
+      m_eventCallback(event);
+    }
+
     switch (event.type) {
     case SDL_QUIT:
       m_shouldClose = true;
