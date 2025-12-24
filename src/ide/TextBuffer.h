@@ -66,6 +66,16 @@ public:
   int GetLineCount() const;
   uint32_t GetLength() const;
 
+  // Find/Replace
+  int Find(const std::string &needle, uint32_t startOffset = 0,
+           bool caseSensitive = true) const;
+  std::vector<uint32_t> FindAll(const std::string &needle,
+                                bool caseSensitive = true) const;
+  bool Replace(uint32_t offset, uint32_t length,
+               const std::string &replacement);
+  int ReplaceAll(const std::string &needle, const std::string &replacement,
+                 bool caseSensitive = true);
+
   // Debug
   void PrintPieces() const;
 

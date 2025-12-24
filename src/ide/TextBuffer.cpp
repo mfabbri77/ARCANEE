@@ -1,5 +1,8 @@
 #include "TextBuffer.h"
 #include <algorithm>
+#include <cctype>
+#include <chrono>
+#include <iostream>
 #include <iterator>
 
 namespace arcanee::ide {
@@ -402,6 +405,80 @@ void TextBuffer::PrintPieces() const {
     std::cout << "  [" << (p.source == Piece::Source::Original ? "ORG" : "ADD")
               << "] Start:" << p.start << " Len:" << p.length << "\n";
   }
+}
+
+int TextBuffer::Find(const std::string &needle, uint32_t startOffset,
+                     bool caseSensitive) const {
+  if (needle.empty())
+    return -1;
+
+  std::string haystack = GetAllText();
+  if (startOffset >= haystack.size())
+    return -1;
+
+  if (caseSensitive) {
+    size_t pos = haystack.find(needle, startOffset);
+    return (pos != std::string::npos) ? (int)pos : -1;
+  } else {
+    // Case-insensitive search
+    std::string lowerHaystack = haystack;
+    std::string lowerNeedle = needle;
+    std::transform(lowerHaystack.begin(), lowerHaystack.end(),
+                   lowerHaystack.begin(), ::tolower);
+    std::transform(lowerNeedle.begin(), lowerNeedle.end(), lowerNeedle.begin(),
+                   ::tolower);
+    size_t pos = lowerHaystack.find(lowerNeedle, startOffset);
+    return (pos != std::string::npos) ? (int)pos : -1;
+  }
+}
+
+std::vector<uint32_t> TextBuffer::FindAll(const std::string &needle,
+                                          bool caseSensitive) const {
+  std::vector<uint32_t> results;
+  if (needle.empty())
+    return results;
+
+  int pos = 0;
+  while ((pos = Find(needle, pos, caseSensitive)) >= 0) {
+    results.push_back((uint32_t)pos);
+    pos += 1; // Move past current match to find next
+  }
+  return results;
+}
+
+bool TextBuffer::Replace(uint32_t offset, uint32_t length,
+                         const std::string &replacement) {
+  if (offset > GetLength())
+    return false;
+
+  BeginBatch();
+  Delete(offset, length);
+  Insert(offset, replacement);
+  EndBatch();
+  return true;
+}
+
+int TextBuffer::ReplaceAll(const std::string &needle,
+                           const std::string &replacement, bool caseSensitive) {
+  if (needle.empty())
+    return 0;
+
+  auto matches = FindAll(needle, caseSensitive);
+  if (matches.empty())
+    return 0;
+
+  BeginBatch();
+
+  // Replace from end to start to maintain offsets
+  int count = 0;
+  for (int i = (int)matches.size() - 1; i >= 0; i--) {
+    Delete(matches[i], (uint32_t)needle.size());
+    Insert(matches[i], replacement);
+    count++;
+  }
+
+  EndBatch();
+  return count;
 }
 
 } // namespace arcanee::ide
