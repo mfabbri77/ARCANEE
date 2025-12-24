@@ -408,6 +408,18 @@ void Runtime::draw(f64 alpha) {
 // ----------------------------------------------------------------------------
 
 bool Runtime::loadCartridge(const std::string &path) {
+  // Unload existing cartridge first to ensure clean state
+  if (m_cartridge) {
+    m_cartridge->unload();
+    m_cartridge.reset();
+  }
+
+  // Stop all audio from previous cartridge
+  if (m_audioManager) {
+    m_audioManager->stopModule();
+    m_audioManager->stopAllSounds();
+  }
+
   LOG_INFO("Runtime: Loading cartridge from '%s'", path.c_str());
 
   // 1. Create Cartridge Manager

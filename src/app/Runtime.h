@@ -58,6 +58,9 @@ public:
   // Public for now, or make private and called from ctor
   bool loadCartridge(const std::string &path);
 
+  // Request application exit
+  void requestExit() { m_isRunning = false; }
+
   input::InputManager *getInputManager() const { return m_inputManager.get(); }
 
 private:

@@ -160,7 +160,9 @@ void Workbench::update(double dt) {
         m_showLogConsole = !m_showLogConsole;
       }
       if (ImGui::MenuItem("Exit")) {
-        // TODO: Request exit
+        if (m_runtime) {
+          m_runtime->requestExit();
+        }
       }
       ImGui::EndMenu();
     }
