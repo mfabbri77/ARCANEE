@@ -92,6 +92,11 @@ bool RenderDevice::initialize(void *displayHandle, unsigned long windowHandle) {
   }
 
   LOG_ERROR("Failed to initialize RenderDevice");
+  if (m_impl) {
+    m_impl->pSwapChain.Release();
+    m_impl->pImmediateContext.Release();
+    m_impl->pDevice.Release();
+  }
   return false;
 }
 
@@ -145,6 +150,29 @@ bool RenderDevice::tryRecoverDevice() {
   // and require application restart.
   LOG_ERROR("RenderDevice: Device loss recovery not implemented in v0.1");
   return false;
+}
+
+RenderDevice::RenderBackend RenderDevice::getBackend() const {
+  if (!m_impl || !m_impl->pDevice)
+    return RenderBackend::Unknown;
+
+  const auto &caps = m_impl->pDevice->GetDeviceInfo();
+  switch (caps.Type) {
+  case RENDER_DEVICE_TYPE_VULKAN:
+    return RenderBackend::Vulkan;
+  case RENDER_DEVICE_TYPE_GL:
+    return RenderBackend::OpenGL;
+  case RENDER_DEVICE_TYPE_GLES:
+    return RenderBackend::OpenGL;
+  case RENDER_DEVICE_TYPE_D3D11:
+    return RenderBackend::Direct3D11;
+  case RENDER_DEVICE_TYPE_D3D12:
+    return RenderBackend::Direct3D12;
+  case RENDER_DEVICE_TYPE_METAL:
+    return RenderBackend::Metal;
+  default:
+    return RenderBackend::Unknown;
+  }
 }
 
 } // namespace arcanee::render

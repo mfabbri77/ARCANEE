@@ -34,6 +34,8 @@ set(PLATFORM_SOURCES
 )
 
 set(SCRIPT_SOURCES
+    script/BindingHelpers.h
+    script/BindingHelpers.cpp
     script/ScriptEngine.cpp
     script/api/SysBinding.cpp
     script/api/FsBinding.cpp
@@ -63,6 +65,7 @@ set(INPUT_SOURCES
 set(APP_SOURCES
     app/main.cpp
     app/Runtime.cpp
+    app/Workbench.cpp
 )
 
 add_library(vfs STATIC
@@ -96,6 +99,7 @@ add_library(arcanee_core STATIC
     ${AUDIO_SOURCES}
     ${INPUT_SOURCES}
     app/Runtime.cpp
+    app/Workbench.cpp
 )
 
 target_link_libraries(arcanee_core PUBLIC
@@ -106,7 +110,9 @@ target_link_libraries(arcanee_core PUBLIC
     sqstdlib_static
     Diligent-GraphicsEngineVk-static
     Diligent-GraphicsEngineOpenGL-static
+    Diligent-GraphicsEngineOpenGL-static
     Diligent-GraphicsTools
+    Diligent-Imgui
     thorvg_static
     ${LIBOPENMPT_LIBRARIES}
 )
@@ -122,6 +128,7 @@ target_include_directories(arcanee_core PUBLIC
 
 target_include_directories(arcanee_core SYSTEM PUBLIC
     "${diligentcore_SOURCE_DIR}"
+    "${diligenttools_SOURCE_DIR}"
 )
 
 target_compile_features(arcanee_core PUBLIC cxx_std_17)
@@ -138,11 +145,20 @@ else()
     target_compile_options(arcanee_core PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+# Diligent ImGui
+target_link_libraries(arcanee_core PRIVATE Diligent-Imgui)
+
+# ImGui Source from DiligentTools ThirdParty
+set(IMGUI_DIR "${diligenttools_SOURCE_DIR}/ThirdParty/imgui")
+target_sources(arcanee_core PRIVATE "${IMGUI_DIR}/backends/imgui_impl_sdl.cpp")
+target_sources(arcanee_core PRIVATE "${IMGUI_DIR}/imgui_demo.cpp")
+target_include_directories(arcanee_core SYSTEM PUBLIC
+    "${IMGUI_DIR}"
+    "${IMGUI_DIR}/backends"
+)
 
 add_executable(arcanee
     app/main.cpp
 )
 
 target_link_libraries(arcanee PRIVATE arcanee_core)
-
-

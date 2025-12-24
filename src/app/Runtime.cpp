@@ -12,6 +12,7 @@
  */
 
 #include "Runtime.h"
+#include "Workbench.h" // Added
 #include "common/Log.h"
 #include "platform/Time.h"
 #include "render/RenderDevice.h"
@@ -180,6 +181,15 @@ void Runtime::initSubsystems() {
   // 6. Initialize Script Engine
   m_scriptEngine = std::make_unique<script::ScriptEngine>();
 
+  // 7. Initialize Workbench (MS-04)
+  if (!m_isHeadless) {
+    m_workbench = std::make_unique<Workbench>();
+    if (!m_workbench->initialize(m_renderDevice.get(), m_window.get())) {
+      LOG_ERROR("Failed to initialize Workbench");
+      // Non-fatal?
+    }
+  }
+
   m_isRunning = true;
   LOG_INFO("Runtime: Subsystems initialized");
 }
@@ -191,6 +201,11 @@ void Runtime::shutdownSubsystems() {
   if (m_cartridge) {
     m_cartridge->unload();
     m_cartridge.reset();
+  }
+
+  if (m_workbench) {
+    m_workbench->shutdown();
+    m_workbench.reset();
   }
 
   m_scriptEngine.reset();

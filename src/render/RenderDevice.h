@@ -36,9 +36,21 @@ public:
   void *getContext();
   void *getSwapChain();
 
+  enum class RenderBackend {
+    Unknown,
+    Vulkan,
+    OpenGL,
+    Direct3D11,
+    Direct3D12,
+    Metal
+  };
+
+  RenderBackend getBackend() const;
+
 private:
   struct Impl;
   Impl *m_impl = nullptr;
+
   bool m_vsyncEnabled = true;
   bool m_deviceLost = false;
 };

@@ -103,12 +103,16 @@ void AudioManager::stopVoice(u32 voiceIndex) {
 void AudioManager::stopAllSounds() { m_sfxMixer->stopAll(); }
 
 // ===== Module Management =====
+// ===== Module Management =====
 u32 AudioManager::loadModule(const u8 *data, size_t size) {
   if (!data || size == 0) {
     return 0;
   }
 
   // Store module data (ModulePlayer needs it to stay alive)
+  // Warning: Modifying this on Main Thread while Audio Thread might be reading?
+  // Ideally, we should double-buffer or use a mutex.
+  // For V0.1, we assume load handles overlap safely or user stops before load.
   m_currentModuleData.assign(data, data + size);
 
   if (!m_modulePlayer->load(m_currentModuleData.data(),
@@ -124,6 +128,9 @@ u32 AudioManager::loadModule(const u8 *data, size_t size) {
 
 void AudioManager::freeModule(u32 handle) {
   if (handle == m_currentModuleHandle) {
+    // ENQUEUE THIS TOO? For now, direct call might unsafe.
+    // Unloading while playing is dangerous.
+    // Safe option: Stop first.
     m_modulePlayer->unload();
     m_currentModuleData.clear();
     m_currentModuleHandle = 0;
@@ -131,28 +138,47 @@ void AudioManager::freeModule(u32 handle) {
 }
 
 void AudioManager::playModule(u32 handle, bool loop) {
-  (void)loop; // TODO: Implement loop control
-  if (handle == m_currentModuleHandle) {
-    m_modulePlayer->play();
-  }
+  AudioCommandData cmd;
+  cmd.cmd = AudioCommand::PlayModule;
+  cmd.playModule.handle = handle;
+  cmd.playModule.loop = loop;
+  m_commandQueue.push(cmd);
 }
 
-void AudioManager::stopModule() { m_modulePlayer->stop(); }
+void AudioManager::stopModule() {
+  AudioCommandData cmd;
+  cmd.cmd = AudioCommand::StopModule;
+  m_commandQueue.push(cmd);
+}
 
-void AudioManager::pauseModule() { m_modulePlayer->pause(); }
+void AudioManager::pauseModule() {
+  AudioCommandData cmd;
+  cmd.cmd = AudioCommand::PauseModule;
+  m_commandQueue.push(cmd);
+}
 
-void AudioManager::resumeModule() { m_modulePlayer->resume(); }
+void AudioManager::resumeModule() {
+  AudioCommandData cmd;
+  cmd.cmd = AudioCommand::ResumeModule;
+  m_commandQueue.push(cmd);
+}
 
 void AudioManager::setModuleVolume(f32 volume) {
-  m_modulePlayer->setVolume(volume);
+  AudioCommandData cmd;
+  cmd.cmd = AudioCommand::SetModuleVolume;
+  cmd.setVolume.volume = volume;
+  m_commandQueue.push(cmd);
 }
 
 // ===== Master Control =====
 void AudioManager::setMasterVolume(f32 volume) {
+  // Update local atomic for immediate UI feedback if needed
   m_masterVolume.store(volume < 0.0f ? 0.0f : (volume > 1.0f ? 1.0f : volume));
-  if (m_device) {
-    m_device->setMasterVolume(m_masterVolume.load());
-  }
+
+  AudioCommandData cmd;
+  cmd.cmd = AudioCommand::SetMasterVolume;
+  cmd.masterVolume.volume = m_masterVolume.load();
+  m_commandQueue.push(cmd);
 }
 
 f32 AudioManager::getMasterVolume() const { return m_masterVolume.load(); }
@@ -165,31 +191,52 @@ u32 AudioManager::getActiveVoiceCount() const {
   return m_sfxMixer ? m_sfxMixer->getActiveVoiceCount() : 0;
 }
 
+// ===== Internal Command Handlers (Audio Thread) =====
+
+void AudioManager::doPlayModule(u32 handle, bool loop) {
+  (void)loop;
+  if (handle == m_currentModuleHandle) {
+    m_modulePlayer->play();
+  }
+}
+
+void AudioManager::doStopModule() { m_modulePlayer->stop(); }
+void AudioManager::doPauseModule() { m_modulePlayer->pause(); }
+void AudioManager::doResumeModule() { m_modulePlayer->resume(); }
+void AudioManager::doSetModuleVolume(f32 volume) {
+  m_modulePlayer->setVolume(volume);
+}
+void AudioManager::doSetMasterVolume(f32 volume) {
+  if (m_device)
+    m_device->setMasterVolume(volume);
+}
+void AudioManager::doStopAllSounds() { m_sfxMixer->stopAll(); }
+
 // ===== Audio Mixing =====
 void AudioManager::processCommands() {
   AudioCommandData cmd;
   while (m_commandQueue.pop(cmd)) {
     switch (cmd.cmd) {
     case AudioCommand::PlayModule:
-      playModule(cmd.playModule.handle, cmd.playModule.loop);
+      doPlayModule(cmd.playModule.handle, cmd.playModule.loop);
       break;
     case AudioCommand::StopModule:
-      stopModule();
+      doStopModule();
       break;
     case AudioCommand::PauseModule:
-      pauseModule();
+      doPauseModule();
       break;
     case AudioCommand::ResumeModule:
-      resumeModule();
+      doResumeModule();
       break;
     case AudioCommand::SetModuleVolume:
-      setModuleVolume(cmd.setVolume.volume);
+      doSetModuleVolume(cmd.setVolume.volume);
       break;
     case AudioCommand::StopAllSounds:
-      stopAllSounds();
+      doStopAllSounds();
       break;
     case AudioCommand::SetMasterVolume:
-      setMasterVolume(cmd.masterVolume.volume);
+      doSetMasterVolume(cmd.masterVolume.volume);
       break;
     default:
       break;

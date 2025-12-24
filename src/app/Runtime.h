@@ -28,6 +28,7 @@
 #include <memory>
 
 namespace arcanee::app {
+class Workbench; // Forward declaration
 
 /**
  * @brief Main runtime class that orchestrates the ARCANEE engine.
@@ -79,6 +80,15 @@ private:
 
   std::unique_ptr<runtime::Cartridge> m_cartridge;
   std::vector<u32> m_palette;
+
+  // Workbench (MS-04)
+  friend class Workbench; // Access to private members? Or pass public API?
+  // Ideally Runtime exposes public API for what Workbench needs.
+  // For now, let's include header or fwd decl.
+  // We need incomplete type support or include header.
+  // Put include in .cpp, fwd decl here.
+  std::unique_ptr<Workbench> m_workbench;
+  bool m_showWorkbench = false;
 };
 
 } // namespace arcanee::app

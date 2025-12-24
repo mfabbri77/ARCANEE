@@ -66,6 +66,20 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(DiligentCore)
 
+# Diligent Tools (Imgui, TextureLoader, etc.)
+set(DILIGENT_BUILD_IMGUI ON CACHE BOOL "Build Diligent ImGui" FORCE)
+set(DILIGENT_BUILD_RENDER_STATE_NOTATION OFF CACHE BOOL "Disable RSN" FORCE)
+set(DILIGENT_BUILD_ASSET_LOADER OFF CACHE BOOL "Disable Asset Loader" FORCE)
+set(DILIGENT_BUILD_GLTF_LOADER OFF CACHE BOOL "Disable GLTF Loader" FORCE)
+FetchContent_Declare(
+    DiligentTools
+    GIT_REPOSITORY https://github.com/DiligentGraphics/DiligentTools.git
+    GIT_TAG        v2.5.5
+    PATCH_COMMAND sh -c "sed -i 's/add_subdirectory(RenderStateNotation)/#&/' CMakeLists.txt && sed -i 's/add_subdirectory(NativeApp)/#&/' CMakeLists.txt && sed -i 's/add_subdirectory(HLSL2GLSLConverter)/#&/' CMakeLists.txt && sed -i 's/target_link_libraries(Diligent-Imgui PRIVATE XCBKeySyms)/#&/' Imgui/CMakeLists.txt"
+)
+
+FetchContent_MakeAvailable(DiligentTools)
+
 # ThorVG - 2D Vector Graphics Engine
 # ThorVG uses Meson, so we build it manually from source
 FetchContent_Declare(

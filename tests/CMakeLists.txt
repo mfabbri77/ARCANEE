@@ -17,6 +17,10 @@ FetchContent_MakeAvailable(googletest)
 add_executable(arcanee_tests
     test_vfs_sandbox.cpp
     test_determinism_replay.cpp
+    test_script_safety.cpp
+    test_script_safety.cpp
+    test_render_smoke.cpp
+    test_audio_queue.cpp
 )
 
 # Link against engine components

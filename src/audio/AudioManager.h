@@ -116,6 +116,15 @@ public:
 private:
   void processCommands();
 
+  // Command handlers (Audio Thread)
+  void doPlayModule(u32 handle, bool loop);
+  void doStopModule();
+  void doPauseModule();
+  void doResumeModule();
+  void doSetModuleVolume(f32 volume);
+  void doSetMasterVolume(f32 volume);
+  void doStopAllSounds();
+
   std::unique_ptr<AudioDevice> m_device;
   std::unique_ptr<ModulePlayer> m_modulePlayer;
   std::unique_ptr<SfxMixer> m_sfxMixer;
