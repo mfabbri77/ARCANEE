@@ -7,3 +7,8 @@ sed -i '/^export(EXPORT/,/  )/s/^/#/' CMakeLists.txt
 
 # Disable install(EXPORT ...) command block
 sed -i '/^  install(EXPORT/,/    )/s/^/#/' CMakeLists.txt
+
+# Fix CMake deprecation warning
+sed -i 's/cmake_minimum_required(VERSION .*)/cmake_minimum_required(VERSION 3.10)/' CMakeLists.txt
+
+

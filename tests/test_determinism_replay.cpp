@@ -31,7 +31,9 @@ TEST_F(DeterminismReplayTest, ReplayProducesSameHash) {
   // We can pass a dummy path if we don't rely on cartridge script logic for
   // this test (input hash is part of sim state hash).
 
-  Runtime runtime("test_cart", true);
+  Runtime::Config config1;
+  config1.cartridgePath = "test_cart";
+  Runtime runtime(config1);
   // If loading fails, loop still runs but update is empty. InputManager still
   // updates. Valid enough for input replay test.
 
@@ -79,7 +81,9 @@ TEST_F(DeterminismReplayTest, ReplayProducesSameHash) {
   // care about Replay matching.
 
   // 3. Replay
-  Runtime runtime2("test_cart", true);
+  Runtime::Config config2;
+  config2.cartridgePath = "test_cart";
+  Runtime runtime2(config2);
   auto *input2 = runtime2.getInputManager();
 
   input2->startPlayback(recorded);

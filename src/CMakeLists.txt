@@ -141,6 +141,11 @@ if(LIBOPENMPT_FOUND)
     target_compile_definitions(arcanee_core PUBLIC HAS_LIBOPENMPT)
 endif()
 
+if(ARCANEE_ENABLE_IDE)
+    target_compile_definitions(arcanee_core PUBLIC ARCANEE_ENABLE_IDE)
+endif()
+
+
 # Warnings
 if(MSVC)
     target_compile_options(arcanee_core PRIVATE /W4 /WX)

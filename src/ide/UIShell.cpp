@@ -130,6 +130,17 @@ void UIShell::RenderDockspace() {
 // Helper for recursion
 void DrawTree(const FileNode &node,
               std::function<void(const std::string &)> onOpen) {
+  // Guard: Skip nodes with empty names (e.g., uninitialized root)
+  if (node.name.empty()) {
+    if (!node.children.empty()) {
+      // If root has no name but has children, just render children
+      for (const auto &child : node.children) {
+        DrawTree(child, onOpen);
+      }
+    }
+    return;
+  }
+
   if (node.isDirectory) {
     bool open = ImGui::TreeNode(node.name.c_str());
     if (open) {

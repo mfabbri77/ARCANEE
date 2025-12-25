@@ -62,7 +62,9 @@ FetchContent_Declare(
     DiligentCore
     GIT_REPOSITORY https://github.com/DiligentGraphics/DiligentCore.git
     GIT_TAG        v2.5.5
+    PATCH_COMMAND "${CMAKE_SOURCE_DIR}/cmake/patch_diligent_core.sh"
 )
+
 
 FetchContent_MakeAvailable(DiligentCore)
 
@@ -75,7 +77,7 @@ FetchContent_Declare(
     DiligentTools
     GIT_REPOSITORY https://github.com/DiligentGraphics/DiligentTools.git
     GIT_TAG        v2.5.5
-    PATCH_COMMAND sh -c "sed -i 's/add_subdirectory(RenderStateNotation)/#&/' CMakeLists.txt && sed -i 's/add_subdirectory(NativeApp)/#&/' CMakeLists.txt && sed -i 's/add_subdirectory(HLSL2GLSLConverter)/#&/' CMakeLists.txt && sed -i 's/add_subdirectory(RenderStatePackager)/#&/' CMakeLists.txt && sed -i 's/target_link_libraries(Diligent-Imgui PRIVATE XCBKeySyms)/#&/' Imgui/CMakeLists.txt"
+    PATCH_COMMAND "${CMAKE_SOURCE_DIR}/cmake/patch_diligent_tools.sh"
 )
 
 FetchContent_MakeAvailable(DiligentTools)
@@ -94,6 +96,17 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/thorvg/thorvg.git
     GIT_TAG        v0.15.6
 )
+
+# Silence FetchContent_Populate warnings (CMP0169)
+if(POLICY CMP0169)
+  cmake_policy(SET CMP0169 OLD)
+endif()
+
+# Silence CMP0175 (add_custom_command validation) used by Diligent
+if(POLICY CMP0175)
+  cmake_policy(SET CMP0175 OLD)
+endif()
+
 
 FetchContent_GetProperties(thorvg)
 if(NOT thorvg_POPULATED)
@@ -183,6 +196,17 @@ set_property(TARGET thorvg_static PROPERTY POSITION_INDEPENDENT_CODE ON)
 set_property(TARGET squirrel_static PROPERTY POSITION_INDEPENDENT_CODE ON)
 set_property(TARGET sqstdlib_static PROPERTY POSITION_INDEPENDENT_CODE ON)
 
+if(NOT MSVC)
+    target_compile_options(squirrel_static PRIVATE -w)
+    target_compile_options(sqstdlib_static PRIVATE -w)
+    # sq_static is the interpreter executable, might not need suppression if not linked,
+    # but build log showed warnings.
+    if(TARGET sq_static)
+        target_compile_options(sq_static PRIVATE -w)
+    endif()
+endif()
+
+
 # ==========================================
 # v0.2 IDE Feature Flags [BUILD-08]
 # ==========================================
@@ -247,8 +271,10 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/PCRE2Project/pcre2.git
     GIT_TAG        pcre2-10.42
     CMAKE_ARGS     "-DPCRE2_BUILD_PCRE2_8=ON;-DPCRE2_BUILD_TESTS=OFF;-DPCRE2_BUILD_PCRE2GREP=OFF;-DBUILD_TESTING=OFF"
+    PATCH_COMMAND  "${CMAKE_SOURCE_DIR}/cmake/patch_pcre2.sh"
 )
 FetchContent_MakeAvailable(pcre2)
+
 
 # SQLite (Timeline Metadata) - Use system SQLite3
 find_package(SQLite3 REQUIRED)
@@ -294,8 +320,17 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/nlohmann/json.git
     GIT_TAG        v3.11.2
     CMAKE_ARGS     -DJSON_BuildTests=OFF
+    PATCH_COMMAND  "${CMAKE_SOURCE_DIR}/cmake/patch_common_deps.sh"
 )
+
 FetchContent_MakeAvailable(json)
+
+if(TARGET nlohmann_json)
+    if(NOT MSVC)
+        target_compile_options(nlohmann_json INTERFACE -w)
+    endif()
+endif()
+
 
 # spdlog (Logging)
 if(NOT TARGET spdlog)
