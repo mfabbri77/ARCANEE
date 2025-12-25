@@ -290,11 +290,16 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/facebook/zstd.git
     GIT_TAG        v1.5.5
     CMAKE_ARGS     -DZSTD_BUILD_PROGRAMS=OFF -DZSTD_BUILD_TESTS=OFF
+    PATCH_COMMAND  "${CMAKE_SOURCE_DIR}/cmake/patch_common_deps.sh"
 )
 FetchContent_GetProperties(zstd)
 if(NOT zstd_POPULATED)
     FetchContent_Populate(zstd)
     add_subdirectory(${zstd_SOURCE_DIR}/build/cmake ${zstd_BINARY_DIR})
+    target_compile_options(libzstd_static PRIVATE -w)
+    if(TARGET libzstd_shared)
+        target_compile_options(libzstd_shared PRIVATE -w)
+    endif()
 endif()
 
 # xxHash (Dedup)
