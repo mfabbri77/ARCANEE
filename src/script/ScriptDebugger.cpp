@@ -45,7 +45,12 @@ void ScriptDebugger::setAction(DebugAction action) {
   if (action != DebugAction::None && action != DebugAction::Continue) {
     // Record depth for stepping
     m_stepDepth = m_currentDepth;
-    LOG_INFO("Debugger: Action=%d, StartDepth=%d", (int)action, m_stepDepth);
+    // Arm step - next line event will capture start location
+    m_stepArmed = true;
+    LOG_INFO("Debugger: Action=%d, StartDepth=%d, Armed", (int)action,
+             m_stepDepth);
+  } else {
+    m_stepArmed = false;
   }
 }
 
@@ -87,16 +92,28 @@ void ScriptDebugger::debugHook(HSQUIRRELVM v, SQInteger type,
 void ScriptDebugger::onHook(HSQUIRRELVM v, SQInteger type,
                             const std::string &file, int line,
                             const std::string &func) {
-  // UNCONDITIONAL entry probe - this MUST print if onHook is called
-  LOG_INFO("ONHOOK ENTRY type=%c file=%s line=%d", (char)type, file.c_str(),
-           line);
+  // UNCONDITIONAL entry probe
+  LOG_INFO("ONHOOK ENTRY type=%c file=%s line=%d depth=%d", (char)type,
+           file.c_str(), line, m_currentDepth);
 
-  // Only line events are relevant for line breakpoints and stepping
+  // Track call depth on 'c' (call) and 'r' (return) events FIRST
+  // This must happen BEFORE any early returns so we maintain accurate depth
+  if (type == 'c') {
+    m_currentDepth++;
+    LOG_INFO("CALL depth++ -> %d", m_currentDepth);
+    return;
+  }
+  if (type == 'r') {
+    m_currentDepth--;
+    LOG_INFO("RETURN depth-- -> %d", m_currentDepth);
+    return;
+  }
+
+  // Only line events ('l') are relevant for line breakpoints and stepping
   if (type != 'l')
     return;
 
   // Watchdog Check - SKIP if debugging is enabled!
-  // When debugging, we don't want watchdog to kill execution before breakpoints
   if (m_engine && m_engine->m_watchdogEnabled && !m_enabled) {
     double elapsed = platform::Time::now() - m_engine->m_executionStartTime;
     if (elapsed > m_engine->m_watchdogTimeout) {
@@ -106,38 +123,35 @@ void ScriptDebugger::onHook(HSQUIRRELVM v, SQInteger type,
     }
   }
 
-  // 1) BP CHECK LOG - Using fprintf to ensure visibility
+  // BP CHECK LOG
   fprintf(stderr,
-          "BP CHECK file='%s' line=%d enabled=%d action=%d paused=%d hit=%d\n",
+          "BP CHECK file='%s' line=%d enabled=%d action=%d paused=%d armed=%d "
+          "hit=%d\n",
           file.c_str(), line, (int)m_enabled, (int)m_action, (int)m_paused,
-          (int)m_breakpoints.hasBreakpoint(file, line));
+          (int)m_stepArmed, (int)m_breakpoints.hasBreakpoint(file, line));
   fflush(stderr);
 
-  // 2) Breakpoints must be checked EVEN WHEN action == Continue
+  // Breakpoints are checked EVEN WHEN action == Continue
   if (m_breakpoints.hasBreakpoint(file, line)) {
     LOG_INFO("Hit breakpoint at %s:%d", file.c_str(), line);
-    // Trigger stop and notify UI
     m_paused = true;
     m_action = DebugAction::None;
+    m_stepArmed = false;
     if (m_onStop)
       m_onStop(line, file, "breakpoint");
 
     // BLOCKING WAIT: Spin here until debugger is resumed or app should exit
-    // Call UI pump callback to keep UI responsive, or sleep if not available
     LOG_INFO("Debugger paused at %s:%d - waiting for continue", file.c_str(),
              line);
     while (m_paused) {
-      // Check if app wants to exit
       if (m_shouldExit && m_shouldExit()) {
         LOG_INFO("Exit requested - breaking debug pause");
         m_paused = false;
         break;
       }
       if (m_uiPump) {
-        // Pump UI events to keep application responsive
         m_uiPump();
       } else {
-        // Fallback: small sleep to avoid CPU spin
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
       }
     }
@@ -145,38 +159,67 @@ void ScriptDebugger::onHook(HSQUIRRELVM v, SQInteger type,
     return;
   }
 
-  // If just running, we are done
-  if (m_action == DebugAction::Continue) {
+  // If just running (Continue), no stepping logic needed
+  if (m_action == DebugAction::Continue || m_action == DebugAction::None) {
     return;
   }
 
-  // 3) Stepping checks
+  // STEP ARM: Capture start location on first line event after step initiated
+  if (m_stepArmed) {
+    m_stepStartFile = file;
+    m_stepStartLine = line;
+    m_stepArmed = false;
+    LOG_INFO("Step armed at %s:%d depth=%d", file.c_str(), line,
+             m_currentDepth);
+    return; // Skip first event at start location
+  }
+
+  // Stepping checks - only stop if location changed
   bool shouldStop = false;
-  std::string reason;
+  bool locationChanged = (file != m_stepStartFile || line != m_stepStartLine);
 
   switch (m_action) {
   case DebugAction::StepIn:
-    shouldStop = true;
-    reason = "step";
+    // Stop on the first line where location changed
+    shouldStop = locationChanged;
     break;
   case DebugAction::StepOver:
-    // Simple depth check (needs refinement for recursive calls potentially)
-    // m_currentDepth tracked via 'c' calls? We are in 'l' so we don't see calls
-    // here directly but 'c' events update m_currentDepth. NOTE: We filtered
-    // type != 'l' above. This means we miss depth tracking! FIXED: We must
-    // track depth BEFORE returning for != 'l'. WAIT: The user logic said "Only
-    // line events can hit line breakpoints". But we need 'c'/'r' for depth.
-    // Re-adding depth tracking support:
+    // Stop when location changed AND we're at same or shallower depth
+    shouldStop = locationChanged && (m_currentDepth <= m_stepDepth);
     break;
-    // ...
+  case DebugAction::StepOut:
+    // Stop when we've returned to a shallower depth
+    shouldStop = (m_currentDepth < m_stepDepth);
+    break;
   default:
     break;
   }
 
-  // RE-INSERT DEPTH TRACKING restore logic
-  // Logic flaw in user suggestion: if we return early on != 'l', we miss
-  // 'c'/'r' events for StepOver. We need to handle 'c'/'r' first, THEN check
-  // 'l'.
+  if (shouldStop) {
+    LOG_INFO("Step stop at %s:%d (action=%d, depth=%d, startDepth=%d)",
+             file.c_str(), line, (int)m_action, m_currentDepth, m_stepDepth);
+    m_paused = true;
+    m_action = DebugAction::None;
+    if (m_onStop)
+      m_onStop(line, file, "step");
+
+    // BLOCKING WAIT
+    LOG_INFO("Debugger paused at %s:%d - waiting for continue", file.c_str(),
+             line);
+    while (m_paused) {
+      if (m_shouldExit && m_shouldExit()) {
+        LOG_INFO("Exit requested - breaking debug pause");
+        m_paused = false;
+        break;
+      }
+      if (m_uiPump) {
+        m_uiPump();
+      } else {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+    }
+    LOG_INFO("Debugger resumed from %s:%d", file.c_str(), line);
+  }
 }
 
 } // namespace arcanee::script

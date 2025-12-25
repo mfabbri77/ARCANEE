@@ -149,110 +149,140 @@ void DapClient::Disconnect() {
 }
 
 void DapClient::Continue() {
-  std::lock_guard<std::mutex> lock(m_mutex);
-  if (m_state == DebugState::Stopped) {
+  script::ScriptEngine *engine = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_state != DebugState::Stopped) {
+      return;
+    }
     if (m_onOutput) {
       m_onOutput("console", "[DAP] Continuing...");
     }
-
-    if (m_scriptEngine) {
-      m_state = DebugState::Running;
-      m_scriptEngine->setDebugAction(script::DebugAction::Continue);
-    } else {
-      // Fallback simulation
-      m_state = DebugState::Running;
-      bool hitBreakpoint = false;
-      for (const auto &bp : m_breakpoints) {
-        if (bp.enabled && bp.file == m_currentScript) {
-          SimulateStop("breakpoint", bp.line, bp.file);
-          hitBreakpoint = true;
-          break;
-        }
+    engine = m_scriptEngine;
+    m_state = DebugState::Running;
+  }
+  // Mutex released BEFORE calling engine to prevent deadlock
+  if (engine) {
+    engine->setDebugAction(script::DebugAction::Continue);
+  } else {
+    // Fallback simulation (re-acquire lock for state mutation)
+    std::lock_guard<std::mutex> lock(m_mutex);
+    bool hitBreakpoint = false;
+    for (const auto &bp : m_breakpoints) {
+      if (bp.enabled && bp.file == m_currentScript) {
+        SimulateStop("breakpoint", bp.line, bp.file);
+        hitBreakpoint = true;
+        break;
       }
-      if (!hitBreakpoint) {
-        m_state = DebugState::Terminated;
-        if (m_onOutput) {
-          m_onOutput("console", "[DAP] Program terminated.");
-        }
+    }
+    if (!hitBreakpoint) {
+      m_state = DebugState::Terminated;
+      if (m_onOutput) {
+        m_onOutput("console", "[DAP] Program terminated.");
       }
     }
   }
 }
 
 void DapClient::StepIn() {
-  std::lock_guard<std::mutex> lock(m_mutex);
-  if (m_state == DebugState::Stopped) {
+  script::ScriptEngine *engine = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_state != DebugState::Stopped) {
+      return;
+    }
     if (m_onOutput) {
       m_onOutput("console", "[DAP] Step In");
     }
-
-    if (m_scriptEngine) {
-      m_state = DebugState::Running;
-      m_scriptEngine->setDebugAction(script::DebugAction::StepIn);
-    } else {
-      // Fallback simulation
-      int currentLine = m_callStack.empty() ? 1 : m_callStack[0].line;
-      std::string currentFile =
-          m_callStack.empty() ? m_currentScript : m_callStack[0].file;
-      SimulateStop("step", currentLine + 1, currentFile);
-    }
+    engine = m_scriptEngine;
+    m_state = DebugState::Running;
+  }
+  // Mutex released BEFORE calling engine to prevent deadlock
+  if (engine) {
+    engine->setDebugAction(script::DebugAction::StepIn);
+  } else {
+    // Fallback simulation
+    std::lock_guard<std::mutex> lock(m_mutex);
+    int currentLine = m_callStack.empty() ? 1 : m_callStack[0].line;
+    std::string currentFile =
+        m_callStack.empty() ? m_currentScript : m_callStack[0].file;
+    SimulateStop("step", currentLine + 1, currentFile);
   }
 }
 
 void DapClient::StepOver() {
-  std::lock_guard<std::mutex> lock(m_mutex);
-  if (m_state == DebugState::Stopped) {
+  script::ScriptEngine *engine = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_state != DebugState::Stopped) {
+      return;
+    }
     if (m_onOutput) {
       m_onOutput("console", "[DAP] Step Over");
     }
-
-    if (m_scriptEngine) {
-      m_state = DebugState::Running;
-      m_scriptEngine->setDebugAction(script::DebugAction::StepOver);
-    } else {
-      // Fallback simulation
-      int currentLine = m_callStack.empty() ? 1 : m_callStack[0].line;
-      std::string currentFile =
-          m_callStack.empty() ? m_currentScript : m_callStack[0].file;
-      SimulateStop("step", currentLine + 1, currentFile);
-    }
+    engine = m_scriptEngine;
+    m_state = DebugState::Running;
+  }
+  // Mutex released BEFORE calling engine to prevent deadlock
+  if (engine) {
+    engine->setDebugAction(script::DebugAction::StepOver);
+  } else {
+    // Fallback simulation
+    std::lock_guard<std::mutex> lock(m_mutex);
+    int currentLine = m_callStack.empty() ? 1 : m_callStack[0].line;
+    std::string currentFile =
+        m_callStack.empty() ? m_currentScript : m_callStack[0].file;
+    SimulateStop("step", currentLine + 1, currentFile);
   }
 }
 
 void DapClient::StepOut() {
-  std::lock_guard<std::mutex> lock(m_mutex);
-  if (m_state == DebugState::Stopped) {
+  script::ScriptEngine *engine = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_state != DebugState::Stopped) {
+      return;
+    }
     if (m_onOutput) {
       m_onOutput("console", "[DAP] Step Out");
     }
-
-    if (m_scriptEngine) {
-      m_state = DebugState::Running;
-      m_scriptEngine->setDebugAction(script::DebugAction::StepOut);
+    engine = m_scriptEngine;
+    m_state = DebugState::Running;
+  }
+  // Mutex released BEFORE calling engine to prevent deadlock
+  if (engine) {
+    engine->setDebugAction(script::DebugAction::StepOut);
+  } else {
+    // Fallback simulation
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_callStack.size() > 1) {
+      m_callStack.erase(m_callStack.begin());
+      SimulateStop("step", m_callStack[0].line, m_callStack[0].file);
     } else {
-      // Fallback simulation
-      if (m_callStack.size() > 1) {
-        m_callStack.erase(m_callStack.begin());
-        SimulateStop("step", m_callStack[0].line, m_callStack[0].file);
-      } else {
-        int currentLine = m_callStack.empty() ? 1 : m_callStack[0].line;
-        std::string currentFile =
-            m_callStack.empty() ? m_currentScript : m_callStack[0].file;
-        SimulateStop("step", currentLine + 1, currentFile);
-      }
+      int currentLine = m_callStack.empty() ? 1 : m_callStack[0].line;
+      std::string currentFile =
+          m_callStack.empty() ? m_currentScript : m_callStack[0].file;
+      SimulateStop("step", currentLine + 1, currentFile);
     }
   }
 }
 
 void DapClient::Pause() {
-  std::lock_guard<std::mutex> lock(m_mutex);
-  if (m_state == DebugState::Running) {
-    if (m_scriptEngine) {
-      // For pause, we set StepIn so it stops on the next line
-      m_scriptEngine->setDebugAction(script::DebugAction::StepIn);
-    } else {
-      SimulateStop("pause", 1, m_currentScript);
+  script::ScriptEngine *engine = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_state != DebugState::Running) {
+      return;
     }
+    engine = m_scriptEngine;
+  }
+  // Mutex released BEFORE calling engine to prevent deadlock
+  if (engine) {
+    // For pause, we set StepIn so it stops on the next line
+    engine->setDebugAction(script::DebugAction::StepIn);
+  } else {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    SimulateStop("pause", 1, m_currentScript);
   }
 }
 

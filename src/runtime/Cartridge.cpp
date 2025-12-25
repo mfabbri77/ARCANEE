@@ -191,7 +191,10 @@ void Cartridge::update(double dt) {
 }
 
 void Cartridge::draw(double alpha) {
-  if (m_state == CartridgeState::Running || m_state == CartridgeState::Paused) {
+  // Never call script draw when VM is suspended (debugger paused)
+  if ((m_state == CartridgeState::Running ||
+       m_state == CartridgeState::Paused) &&
+      !m_scriptEngine->isPaused()) {
     m_scriptEngine->callDraw(alpha);
   }
 }

@@ -436,6 +436,9 @@ void Runtime::update(f64 dt) {
 }
 
 void Runtime::draw(f64 alpha) {
+  // Don't call script draw if VM is suspended (debugging)
+  bool vmSuspended = m_scriptEngine && m_scriptEngine->isPaused();
+
   // 1. Clear CBUF to black (letterbox color)
   if (m_cbuf && m_renderDevice) {
     m_cbuf->clear(m_renderDevice->getContext(), 0.0f, 0.0f, 0.0f, 1.0f);
@@ -452,7 +455,8 @@ void Runtime::draw(f64 alpha) {
     // m_canvas2d->clear(0x00000000);
 
     // 3. Run cartridge draw (Generates canvas commands)
-    if (m_cartridge) {
+    // Skip if VM is suspended to prevent stack corruption
+    if (m_cartridge && !vmSuspended) {
       m_cartridge->draw(alpha);
     }
 

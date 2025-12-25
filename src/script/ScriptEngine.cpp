@@ -511,6 +511,9 @@ bool ScriptEngine::executeScript(const std::string &vfsPath) {
     return false;
   }
 
+  // Set execution start time for watchdog
+  m_executionStartTime = platform::Time::now();
+
   // Read script file as text
   std::optional<std::string> scriptSource = m_vfs->readText(vfsPath);
   if (!scriptSource) {
@@ -557,6 +560,9 @@ void ScriptEngine::callInit() {
   if (!m_vm)
     return;
 
+  // Set execution start time for watchdog
+  m_executionStartTime = platform::Time::now();
+
   sq_pushroottable(m_vm);
   sq_pushstring(m_vm, "init", -1);
   if (SQ_SUCCEEDED(sq_get(m_vm, -2))) {
@@ -580,6 +586,9 @@ bool ScriptEngine::callUpdate(f64 dt) {
   // If paused, do nothing (gameplay suspended)
   if (m_debugger && m_debugger->isPaused())
     return true;
+
+  // Set execution start time for watchdog
+  m_executionStartTime = platform::Time::now();
 
   sq_pushroottable(m_vm);
   sq_pushstring(m_vm, "update", -1);
@@ -617,6 +626,9 @@ bool ScriptEngine::callUpdate(f64 dt) {
 }
 
 bool ScriptEngine::callDraw(f64 alpha) {
+  // Set execution start time for watchdog
+  m_executionStartTime = platform::Time::now();
+
   sq_pushroottable(m_vm);
   sq_pushstring(m_vm, "draw", -1);
   if (SQ_FAILED(sq_get(m_vm, -2))) {

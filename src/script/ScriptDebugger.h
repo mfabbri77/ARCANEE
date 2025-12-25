@@ -68,6 +68,11 @@ private:
   int m_stepDepth = 0;    // Depth when step started
   int m_currentDepth = 0; // Current call stack depth (tracked)
 
+  // Step location tracking (to ignore first same-location event)
+  std::string m_stepStartFile;
+  int m_stepStartLine = 0;
+  bool m_stepArmed = false; // True after resume, waiting for location change
+
   StopCallback m_onStop;
   UIPumpCallback m_uiPump;
   ShouldExitCallback m_shouldExit;
