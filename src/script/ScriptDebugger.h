@@ -30,7 +30,6 @@ public:
 
   // Actions
   void setAction(DebugAction action);
-  void resume(); // Helper for Continue
 
   // Breakpoints
   BreakpointStore &getBreakpoints() { return m_breakpoints; }
@@ -44,11 +43,11 @@ public:
                                           const std::string &reason)>;
   void setStopCallback(StopCallback cb) { m_onStop = cb; }
 
-  // UI pump callback - called while waiting at breakpoint to keep UI responsive
+  // UI pump callback for blocking wait loop
   using UIPumpCallback = std::function<void()>;
   void setUIPumpCallback(UIPumpCallback cb) { m_uiPump = cb; }
 
-  // Should exit callback - returns true when app wants to quit
+  // Exit check callback - returns true when app is shutting down
   using ShouldExitCallback = std::function<bool()>;
   void setShouldExitCallback(ShouldExitCallback cb) { m_shouldExit = cb; }
 
@@ -72,6 +71,7 @@ private:
   std::string m_stepStartFile;
   int m_stepStartLine = 0;
   bool m_stepArmed = false; // True after resume, waiting for location change
+  int m_stepEventCount = 0; // Counter for same-line detection
 
   StopCallback m_onStop;
   UIPumpCallback m_uiPump;

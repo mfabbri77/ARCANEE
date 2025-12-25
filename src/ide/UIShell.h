@@ -76,6 +76,9 @@ private:
   void RenderFolderDialog();
   void RenderNewProjectDialog();
 
+  // Debug session helper - unified launch logic for F5 and menu
+  void StartDebugSession();
+
   MainThreadQueue &m_queue;
 
   // State

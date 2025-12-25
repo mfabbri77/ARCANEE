@@ -145,17 +145,11 @@ public:
   void setOnDebugStop(DebugStopCallback cb);
 
   /**
-   * @brief Callback to pump UI events while paused at breakpoint.
-   * This keeps the UI responsive during debugging.
+   * @brief Resume VM execution after suspension.
+   * Only ScriptEngine should call sq_wakeupvm to maintain single-owner
+   * semantics.
    */
-  using DebugUIPumpCallback = ScriptDebugger::UIPumpCallback;
-  void setDebugUIPump(DebugUIPumpCallback cb);
-
-  /**
-   * @brief Callback to check if app wants to exit during debug pause.
-   */
-  using DebugShouldExitCallback = ScriptDebugger::ShouldExitCallback;
-  void setDebugShouldExit(DebugShouldExitCallback cb);
+  void resumeVM();
 
   /**
    * @brief Terminate execution immediately.
@@ -186,9 +180,17 @@ private:
   f64 m_watchdogTimeout = 0.5; // Default 500ms
   f64 m_executionStartTime = 0.0;
 
-  // Debugger state
   std::unique_ptr<ScriptDebugger> m_debugger;
   bool m_terminateRequested = false;
+
+  // Pending call state for suspension/resume
+  struct PendingCall {
+    bool active = false;
+    int stackToPop = 0; // Items to pop after call completes
+    enum class Type { None, Update, Draw, Init } type = Type::None;
+  };
+  PendingCall m_pendingCall;
+  void cleanupPendingCall();
 
   // Helper for value to string conversion
   std::string sqValueToString(HSQUIRRELVM vm, SQInteger idx);
@@ -203,6 +205,18 @@ public:
 
   using DebugUpdateCallback = std::function<void()>;
   void setDebugUpdateCallback(DebugUpdateCallback cb) { m_onDebugUpdate = cb; }
+
+  // UI pump for blocking debug hook - keeps UI responsive while paused
+  void setDebugUIPump(std::function<void()> cb) {
+    if (m_debugger)
+      m_debugger->setUIPumpCallback(cb);
+  }
+
+  // Exit check for blocking debug hook - breaks loop when app shuts down
+  void setDebugShouldExit(std::function<bool()> cb) {
+    if (m_debugger)
+      m_debugger->setShouldExitCallback(cb);
+  }
 
 private:
   DebugUpdateCallback m_onDebugUpdate;

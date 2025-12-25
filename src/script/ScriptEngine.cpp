@@ -228,27 +228,42 @@ void ScriptEngine::setOnDebugStop(DebugStopCallback cb) {
     m_debugger->setStopCallback(std::move(cb));
 }
 
-void ScriptEngine::setDebugUIPump(DebugUIPumpCallback cb) {
-  if (m_debugger)
-    m_debugger->setUIPumpCallback(std::move(cb));
+void ScriptEngine::resumeVM() {
+  if (!m_vm)
+    return;
+
+  // Only wake up if VM is actually suspended
+  if (sq_getvmstate(m_vm) == SQ_VMSTATE_SUSPENDED) {
+    m_debugger->setPaused(false);
+
+    // Handle termination request
+    if (m_terminateRequested) {
+      // Wake with error to terminate
+      sq_wakeupvm(m_vm, SQFalse, SQTrue, SQFalse, SQFalse);
+      m_terminateRequested = false;
+    } else {
+      // Normal resume
+      SQRESULT res = sq_wakeupvm(m_vm, SQFalse, SQFalse, SQTrue, SQFalse);
+      if (SQ_SUCCEEDED(res) && sq_getvmstate(m_vm) != SQ_VMSTATE_SUSPENDED) {
+        cleanupPendingCall(); // Call completed, cleanup stack
+      }
+    }
+  }
 }
 
-void ScriptEngine::setDebugShouldExit(DebugShouldExitCallback cb) {
-  if (m_debugger)
-    m_debugger->setShouldExitCallback(std::move(cb));
+void ScriptEngine::cleanupPendingCall() {
+  if (m_pendingCall.active && m_vm) {
+    sq_pop(m_vm, m_pendingCall.stackToPop);
+    m_pendingCall.active = false;
+    m_pendingCall.type = PendingCall::Type::None;
+  }
 }
 
 void ScriptEngine::setDebugAction(DebugAction action) {
   if (m_debugger) {
-    // Logic for resume moved to debugger
-    if (action == DebugAction::Continue) {
-      m_debugger->resume();
-    } else {
-      m_debugger->setAction(action);
-      // If paused, we might need to resume to step?
-      // If we are setting an action, we probably want to resume if paused.
-      m_debugger->resume();
-    }
+    m_debugger->setAction(action);
+    // Resume VM if paused - ScriptEngine is single owner of sq_wakeupvm
+    resumeVM();
   }
 }
 
@@ -457,6 +472,16 @@ SQInteger ScriptEngine::require(HSQUIRRELVM vm) {
 
   engine->m_executionStack.push_back(resolvedPath);
   SQRESULT res = sq_call(vm, 1, SQTrue, SQTrue);
+
+  // Handle suspension - if VM suspended, we can't complete the require
+  // The module execution will resume later, but we can't return it yet
+  if (sq_getvmstate(vm) == SQ_VMSTATE_SUSPENDED) {
+    // Don't pop execution stack yet - resumption will need it
+    // Return an error since we can't complete require synchronously
+    return sq_throwerror(vm,
+                         "Module execution suspended (breakpoint in init?)");
+  }
+
   engine->m_executionStack.pop_back();
 
   if (SQ_FAILED(res)) {
@@ -583,6 +608,11 @@ void ScriptEngine::callInit() {
 }
 
 bool ScriptEngine::callUpdate(f64 dt) {
+  // If VM is suspended from a previous call, don't start a new one
+  if (m_pendingCall.active && sq_getvmstate(m_vm) == SQ_VMSTATE_SUSPENDED) {
+    return true; // Still suspended
+  }
+
   // If paused, do nothing (gameplay suspended)
   if (m_debugger && m_debugger->isPaused())
     return true;
@@ -602,30 +632,33 @@ bool ScriptEngine::callUpdate(f64 dt) {
 
   m_terminateRequested = false; // Reset flag at start of frame
 
-  // NOTE: We don't use ScopedWatchdog here explicitly, ScopedWatchdog logic
-  // pending move. For now we assume Debugger hook handles it or we'll add it
-  // back to Debugger.
+  // Track pending call for stack cleanup
+  m_pendingCall = {true, 2, PendingCall::Type::Update};
 
   SQRESULT res = sq_call(m_vm, 2, SQFalse, SQTrue);
 
   // Handle Suspension
   if (sq_getvmstate(m_vm) == SQ_VMSTATE_SUSPENDED) {
-    // Suspended! Do NOT pop anything.
-    // Also notify anyone?
+    // Suspended! Don't cleanup yet - resumeVM will do it
     return true;
   }
 
   if (SQ_FAILED(res)) {
     LOG_ERROR("Failed to call update(dt)");
-    sq_pop(m_vm, 2);
+    cleanupPendingCall();
     return false;
   }
 
-  sq_pop(m_vm, 2);
+  cleanupPendingCall();
   return true;
 }
 
 bool ScriptEngine::callDraw(f64 alpha) {
+  // If VM is suspended, don't start a new call
+  if (m_pendingCall.active && sq_getvmstate(m_vm) == SQ_VMSTATE_SUSPENDED) {
+    return true;
+  }
+
   // Set execution start time for watchdog
   m_executionStartTime = platform::Time::now();
 
@@ -639,7 +672,8 @@ bool ScriptEngine::callDraw(f64 alpha) {
   sq_pushroottable(m_vm);
   sq_pushfloat(m_vm, static_cast<SQFloat>(alpha));
 
-  // No watchdog on draw directly, or share logic?
+  // Track pending call for stack cleanup
+  m_pendingCall = {true, 2, PendingCall::Type::Draw};
 
   SQRESULT res = sq_call(m_vm, 2, SQFalse, SQTrue);
 
@@ -649,22 +683,19 @@ bool ScriptEngine::callDraw(f64 alpha) {
 
   if (SQ_FAILED(res)) {
     LOG_ERROR("Failed to call draw(alpha)");
-    sq_pop(m_vm, 2);
+    cleanupPendingCall();
     return false;
   }
 
-  sq_pop(m_vm, 2);
+  cleanupPendingCall();
   return true;
 }
 
 void ScriptEngine::terminate() {
   if (m_vm) {
     m_terminateRequested = true;
-    // We should resume if paused to allow termination exception to throw?
-    if (m_debugger && m_debugger->isPaused()) {
-      m_debugger->resume();
-    }
-    // ensure hook is engaged (debugger does this if enabled)
+    // Resume VM to allow termination - resumeVM will handle the flag
+    resumeVM();
   }
 }
 

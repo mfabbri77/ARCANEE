@@ -2,6 +2,7 @@
 #include "ScriptEngine.h"
 #include "common/Log.h"
 #include "platform/Time.h"
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <sqstdaux.h>
@@ -42,27 +43,14 @@ void ScriptDebugger::setPaused(bool paused) { m_paused = paused; }
 
 void ScriptDebugger::setAction(DebugAction action) {
   m_action = action;
-  if (action != DebugAction::None && action != DebugAction::Continue) {
+  if (action != DebugAction::None && action != DebugAction::Continue &&
+      action != DebugAction::Pause) {
     // Record depth for stepping
     m_stepDepth = m_currentDepth;
     // Arm step - next line event will capture start location
     m_stepArmed = true;
-    LOG_INFO("Debugger: Action=%d, StartDepth=%d, Armed", (int)action,
-             m_stepDepth);
   } else {
     m_stepArmed = false;
-  }
-}
-
-void ScriptDebugger::resume() {
-  if (m_paused && m_vm) {
-    m_paused = false;
-    // Wake up the VM
-    // We pass 1 because we want to return a value?
-    // Actually when suspending we usually just return.
-    // sq_wakeupvm(v, wakeupRet, raiseError, sourceIsRet)
-    // Wake up the VM
-    sq_wakeupvm(m_vm, SQFalse, SQFalse, SQTrue, SQFalse);
   }
 }
 
@@ -100,12 +88,11 @@ void ScriptDebugger::onHook(HSQUIRRELVM v, SQInteger type,
   // This must happen BEFORE any early returns so we maintain accurate depth
   if (type == 'c') {
     m_currentDepth++;
-    LOG_INFO("CALL depth++ -> %d", m_currentDepth);
     return;
   }
   if (type == 'r') {
-    m_currentDepth--;
-    LOG_INFO("RETURN depth-- -> %d", m_currentDepth);
+    m_currentDepth =
+        std::max(0, m_currentDepth - 1); // Clamp to prevent negative
     return;
   }
 
@@ -123,15 +110,25 @@ void ScriptDebugger::onHook(HSQUIRRELVM v, SQInteger type,
     }
   }
 
-  // BP CHECK LOG
-  fprintf(stderr,
-          "BP CHECK file='%s' line=%d enabled=%d action=%d paused=%d armed=%d "
-          "hit=%d\n",
-          file.c_str(), line, (int)m_enabled, (int)m_action, (int)m_paused,
-          (int)m_stepArmed, (int)m_breakpoints.hasBreakpoint(file, line));
-  fflush(stderr);
+  // Pause action: stop on next line event
+  if (m_action == DebugAction::Pause) {
+    m_paused = true;
+    m_action = DebugAction::None;
+    if (m_onStop)
+      m_onStop(line, file, "pause");
+    // Block here until resumed - sq_suspendvm doesn't work from debug hook
+    while (m_paused && !(m_shouldExit && m_shouldExit())) {
+      if (m_uiPump)
+        m_uiPump();
+      else
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    m_paused = false; // Ensure paused is cleared on exit
+    return;
+  }
 
   // Breakpoints are checked EVEN WHEN action == Continue
+  // Breakpoint check
   if (m_breakpoints.hasBreakpoint(file, line)) {
     LOG_INFO("Hit breakpoint at %s:%d", file.c_str(), line);
     m_paused = true;
@@ -139,23 +136,14 @@ void ScriptDebugger::onHook(HSQUIRRELVM v, SQInteger type,
     m_stepArmed = false;
     if (m_onStop)
       m_onStop(line, file, "breakpoint");
-
-    // BLOCKING WAIT: Spin here until debugger is resumed or app should exit
-    LOG_INFO("Debugger paused at %s:%d - waiting for continue", file.c_str(),
-             line);
-    while (m_paused) {
-      if (m_shouldExit && m_shouldExit()) {
-        LOG_INFO("Exit requested - breaking debug pause");
-        m_paused = false;
-        break;
-      }
-      if (m_uiPump) {
+    // Block here until resumed - sq_suspendvm doesn't work from debug hook
+    while (m_paused && !(m_shouldExit && m_shouldExit())) {
+      if (m_uiPump)
         m_uiPump();
-      } else {
+      else
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      }
     }
-    LOG_INFO("Debugger resumed from %s:%d", file.c_str(), line);
+    m_paused = false; // Ensure paused is cleared on exit
     return;
   }
 
@@ -169,10 +157,10 @@ void ScriptDebugger::onHook(HSQUIRRELVM v, SQInteger type,
     m_stepStartFile = file;
     m_stepStartLine = line;
     m_stepArmed = false;
-    LOG_INFO("Step armed at %s:%d depth=%d", file.c_str(), line,
-             m_currentDepth);
-    return; // Skip first event at start location
+    m_stepEventCount = 0; // Reset step counter
+    return;               // Skip first event at start location
   }
+  m_stepEventCount++; // Count line events for same-line detection
 
   // Stepping checks - only stop if location changed
   bool shouldStop = false;
@@ -180,16 +168,16 @@ void ScriptDebugger::onHook(HSQUIRRELVM v, SQInteger type,
 
   switch (m_action) {
   case DebugAction::StepIn:
-    // Stop on the first line where location changed
-    shouldStop = locationChanged;
+    // Stop on location change OR after at least one line event (same-line case)
+    shouldStop = locationChanged || m_stepEventCount > 0;
     break;
   case DebugAction::StepOver:
     // Stop when location changed AND we're at same or shallower depth
     shouldStop = locationChanged && (m_currentDepth <= m_stepDepth);
     break;
   case DebugAction::StepOut:
-    // Stop when we've returned to a shallower depth
-    shouldStop = (m_currentDepth < m_stepDepth);
+    // Stop when depth decreased AND location changed (avoid stopping in-place)
+    shouldStop = (m_currentDepth < m_stepDepth) && locationChanged;
     break;
   default:
     break;
@@ -202,23 +190,14 @@ void ScriptDebugger::onHook(HSQUIRRELVM v, SQInteger type,
     m_action = DebugAction::None;
     if (m_onStop)
       m_onStop(line, file, "step");
-
-    // BLOCKING WAIT
-    LOG_INFO("Debugger paused at %s:%d - waiting for continue", file.c_str(),
-             line);
-    while (m_paused) {
-      if (m_shouldExit && m_shouldExit()) {
-        LOG_INFO("Exit requested - breaking debug pause");
-        m_paused = false;
-        break;
-      }
-      if (m_uiPump) {
+    // Block here until resumed - sq_suspendvm doesn't work from debug hook
+    while (m_paused && !(m_shouldExit && m_shouldExit())) {
+      if (m_uiPump)
         m_uiPump();
-      } else {
+      else
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      }
     }
-    LOG_INFO("Debugger resumed from %s:%d", file.c_str(), line);
+    m_paused = false; // Ensure paused is cleared on exit
   }
 }
 

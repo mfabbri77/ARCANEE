@@ -202,12 +202,12 @@ void Runtime::initSubsystems() {
     }
   }
 
-  // Register Debug Update Callback
+  // Register Debug Update Callback for main loop paused state
   if (m_scriptEngine) {
     m_scriptEngine->setDebugUpdateCallback([this]() { this->onDebugUpdate(); });
-    // Also set UI pump callback for blocking debugger loop
+    // Wire UI pump for blocking debug hook to keep UI responsive
     m_scriptEngine->setDebugUIPump([this]() { this->onDebugUpdate(); });
-    // Allow debug loop to exit when app wants to quit
+    // Wire exit check for blocking debug hook to break loop on shutdown
     m_scriptEngine->setDebugShouldExit([this]() { return !m_isRunning; });
   }
 

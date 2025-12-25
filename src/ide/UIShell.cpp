@@ -87,30 +87,10 @@ void UIShell::RenderFrame() {
     // F5: Start Debugging / Continue
     if (ImGui::IsKeyPressed(ImGuiKey_F5) && !shift && !ctrl) {
       if (state == DebugState::Disconnected) {
-        bool isLoaded = m_isCartridgeLoadedFn && m_isCartridgeLoadedFn();
         bool isRunning = m_isCartridgeRunningFn && m_isCartridgeRunningFn();
 
         if (!isRunning) { // Only start debug if not already running natively
-          m_showDebugger = true;
-          m_showBreakpoints = true;
-          // Connect DapClient to ScriptEngine if available
-          if (m_getScriptEngineFn) {
-            m_dapClient.SetScriptEngine(m_getScriptEngineFn());
-          }
-
-          // Register Stop Callback to pause runtime
-          m_dapClient.SetOnStopped(
-              [this](const std::string &, int, const std::string &) {
-                if (m_pauseRuntimeFn)
-                  m_pauseRuntimeFn();
-              });
-
-          Document *doc = m_documentSystem.GetActiveDocument();
-          std::string launchPath = doc ? doc->path : "";
-          m_dapClient.Launch(launchPath);
-
-          if (m_pauseRuntimeFn)
-            m_pauseRuntimeFn(); // Pause preview when debugging starts
+          StartDebugSession();
         }
       } else if (state == DebugState::Stopped) {
         if (m_resumeRuntimeFn)
@@ -1742,6 +1722,53 @@ void UIShell::RenderNewProjectDialog() {
     }
 
     ImGui::EndPopup();
+  }
+}
+
+// -----------------------------------------------------------------------------
+// StartDebugSession - Unified debug launch logic for F5 and menu
+// -----------------------------------------------------------------------------
+
+void UIShell::StartDebugSession() {
+  m_showDebugger = true;
+  m_showBreakpoints = true;
+
+  // Wire up script engine
+  if (m_getScriptEngineFn) {
+    m_dapClient.SetScriptEngine(m_getScriptEngineFn());
+  }
+
+  // Register stop callback
+  m_dapClient.SetOnStopped(
+      [this](const std::string &, int, const std::string &) {
+        if (m_pauseRuntimeFn)
+          m_pauseRuntimeFn();
+      });
+
+  // Set project root for VFS path translation
+  Document *doc = m_documentSystem.GetActiveDocument();
+  std::string debugRoot = m_projectSystem.GetRoot().fullPath;
+  if (doc) {
+    std::filesystem::path p = doc->path;
+    if (p.filename() == "main.nut") {
+      debugRoot = p.parent_path().string();
+    }
+  }
+  m_dapClient.SetProjectRoot(debugRoot);
+
+  // Stop existing cartridge if running (prevents deadlock)
+  if (m_isCartridgeRunningFn && m_isCartridgeRunningFn()) {
+    if (m_stopCartridgeFn) {
+      m_stopCartridgeFn();
+    }
+  }
+
+  // Launch DAP session (syncs breakpoints, enables debug mode)
+  m_dapClient.Launch(doc ? doc->path : "");
+
+  // Start cartridge
+  if (m_startCartridgeFn) {
+    m_startCartridgeFn();
   }
 }
 

@@ -8,33 +8,26 @@ DapClient::DapClient() {}
 
 DapClient::~DapClient() { Disconnect(); }
 
-std::string DapClient::ToVfsPath(const std::string &hostPath) {
-  fprintf(stderr, "ToVfsPath: ProjectRoot='%s' hostPath='%s'\n",
-          m_projectRoot.c_str(), hostPath.c_str());
+std::string DapClient::ToVfsPath(const std::string &hostPath) const {
   if (m_projectRoot.empty() || hostPath.empty()) {
-    fprintf(stderr, "  -> returning hostPath (root empty or hostPath empty)\n");
     return hostPath;
   }
 
-  // Basic normalization
+  // Basic normalization: convert host path to VFS path
   if (hostPath.find(m_projectRoot) == 0) {
     std::string relative = hostPath.substr(m_projectRoot.length());
     if (relative.length() > 0 && relative[0] == '/') {
       relative = relative.substr(1);
     }
-    std::string vfsPath = "cart:/" + relative;
-    fprintf(stderr, "  -> converted to VFS: '%s'\n", vfsPath.c_str());
-    return vfsPath;
+    return "cart:/" + relative;
   } else if (hostPath.find("cart:/") == 0) {
-    fprintf(stderr, "  -> already VFS path\n");
     return hostPath; // Already VFS path
   }
 
-  fprintf(stderr, "  -> no conversion possible, returning hostPath\n");
   return hostPath;
 }
 
-std::string DapClient::ToHostPath(const std::string &vfsPath) {
+std::string DapClient::ToHostPath(const std::string &vfsPath) const {
   if (m_projectRoot.empty() || vfsPath.empty())
     return vfsPath;
 
@@ -49,43 +42,42 @@ std::string DapClient::ToHostPath(const std::string &vfsPath) {
 void DapClient::SetScriptEngine(script::ScriptEngine *engine) {
   m_scriptEngine = engine;
   if (m_scriptEngine) {
-    m_scriptEngine->setOnDebugStop([this](int line, const std::string &file,
-                                          const std::string &reason) {
-      std::lock_guard<std::mutex> lock(m_mutex);
-      m_state = DebugState::Stopped;
+    m_scriptEngine->setOnDebugStop(
+        [this](int line, const std::string &file, const std::string &reason) {
+          // Capture data and callbacks under lock
+          std::string hostFile;
+          OutputCallback outputCb;
+          StoppedCallback stoppedCb;
+          {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_state = DebugState::Stopped;
+            hostFile = ToHostPath(file);
 
-      // Update callstack immediately so UI can show it
-      if (m_scriptEngine) {
-        auto stack = m_scriptEngine->getCallStack();
-        m_callStack.clear();
-        int idCounter = 0;
-        for (const auto &frame : stack) {
-          // Convert VFS path to host path for UI compatibility
-          m_callStack.push_back(
-              {idCounter++, frame.name, ToHostPath(frame.file), frame.line});
-        }
-        if (!m_callStack.empty()) {
-          m_currentScript = m_callStack[0].file;
-        }
-      }
-
-      if (m_onOutput) {
-        m_onOutput("console", "[DAP] Stopped at " + file + ":" +
-                                  std::to_string(line) + " (" + reason + ")");
-      }
-
-      // Notify UI (Trigger Pause)
-      // Pass HOST path to callback
-      if (m_onStopped) {
-        m_onStopped(reason, line, ToHostPath(file));
-      }
-    });
-  }
-}
-
-void DapClient::SetUIPump(UIPumpCallback cb) {
-  if (m_scriptEngine) {
-    m_scriptEngine->setDebugUIPump(std::move(cb));
+            // Update callstack immediately so UI can show it
+            if (m_scriptEngine) {
+              auto stack = m_scriptEngine->getCallStack();
+              m_callStack.clear();
+              int idCounter = 0;
+              for (const auto &frame : stack) {
+                m_callStack.push_back({idCounter++, frame.name,
+                                       ToHostPath(frame.file), frame.line});
+              }
+              if (!m_callStack.empty()) {
+                m_currentScript = m_callStack[0].file;
+              }
+            }
+            outputCb = m_onOutput;
+            stoppedCb = m_onStopped;
+          }
+          // Call callbacks OUTSIDE lock to avoid reentrancy deadlock
+          if (outputCb) {
+            outputCb("console", "[DAP] Stopped at " + file + ":" +
+                                    std::to_string(line) + " (" + reason + ")");
+          }
+          if (stoppedCb) {
+            stoppedCb(reason, line, hostFile);
+          }
+        });
   }
 }
 
@@ -278,8 +270,8 @@ void DapClient::Pause() {
   }
   // Mutex released BEFORE calling engine to prevent deadlock
   if (engine) {
-    // For pause, we set StepIn so it stops on the next line
-    engine->setDebugAction(script::DebugAction::StepIn);
+    // Use real Pause action that stops on next line event
+    engine->setDebugAction(script::DebugAction::Pause);
   } else {
     std::lock_guard<std::mutex> lock(m_mutex);
     SimulateStop("pause", 1, m_currentScript);

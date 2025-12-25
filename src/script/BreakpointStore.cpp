@@ -36,48 +36,10 @@ void BreakpointStore::clear() {
 }
 
 bool BreakpointStore::hasBreakpoint(const std::string &file, int line) const {
-  // fprintf(stderr, "BP LOOKUP: file='%s' line=%d\n", file.c_str(), line);
   // 1. Exact Match (Fast)
   auto it = m_lookup.find(file);
   if (it != m_lookup.end()) {
-    if (it->second.count(line) > 0) {
-      // LOG_INFO("Breakpoint HIT: %s:%d", file.c_str(), line); // Reduce spam
-      // unless requested
-      return true;
-    } else {
-      LOG_INFO("Breakpoint MISS: %s found, but line %d not in set (size=%zu)",
-               file.c_str(), line, it->second.size());
-      for (int l : it->second) {
-        LOG_INFO("  stored line: %d", l);
-      }
-      return false;
-    }
-  } else {
-    // Only log strictly if we are really searching (spam reduction? No, user
-    // wants diagnostics) But this runs on every line, so it will be super
-    // spammy for lines without BPs. WAIT: User said: "you never stop... That
-    // means the bug is... checking against a different key". We only want to
-    // log if we EXPECTED a breakpoint but missed it? No we don't know if we
-    // expected it. But we can log "File not in lookup" ONE time or just log it.
-    // The user specifically requested: "Add a single “must-print” log right
-    // before the check" (in ScriptDebugger) AND "Make
-    // BreakpointStore::hasBreakpoint() dump on miss for that file".
-
-    // We'll log it.
-    LOG_INFO("Breakpoint MISS: File '%s' not in lookup", file.c_str());
-    LOG_INFO("Incoming file len=%zu", file.size());
-    // for (unsigned char c : file) { printf("%02x ", c); } printf("\n");
-
-    // Dump available keys only once? Or always?
-    // Doing it always on every line will be insane.
-    // But maybe the user only runs this when they *know* there should be a BP.
-    // Let's implement it.
-
-    /*
-    for (const auto &kv : m_lookup) {
-      LOG_INFO("  - Key '%s' len=%zu", kv.first.c_str(), kv.first.size());
-    }
-    */
+    return it->second.count(line) > 0;
   }
 
   // 2. Linear Scan Fallback (Robust VFS/Absolute matching)
