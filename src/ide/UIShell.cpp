@@ -79,6 +79,10 @@ void UIShell::RenderFrame() {
         if (doc) {
           m_showDebugger = true;
           m_showBreakpoints = true;
+          // Connect DapClient to ScriptEngine if available
+          if (m_getScriptEngineFn) {
+            m_dapClient.SetScriptEngine(m_getScriptEngineFn());
+          }
           m_dapClient.Launch(doc->path);
           if (m_pauseRuntimeFn)
             m_pauseRuntimeFn(); // Pause preview when debugging starts

@@ -66,6 +66,9 @@ public:
   // Canvas2D accessor for IDE preview
   render::Canvas2D *getCanvas2D() const { return m_canvas2d.get(); }
 
+  // ScriptEngine accessor for IDE debugger
+  script::ScriptEngine *getScriptEngine() const { return m_scriptEngine.get(); }
+
   // Pause/resume for debugger synchronization
   void pause() { m_isPaused = true; }
   void resume() { m_isPaused = false; }

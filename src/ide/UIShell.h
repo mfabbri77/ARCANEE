@@ -16,6 +16,10 @@
 #include "TaskRunner.h"
 #include "TimelineStore.h"
 
+namespace arcanee::script {
+class ScriptEngine; // Forward declaration
+}
+
 // Forward declaration of ImGui structures if needed, but we typically use
 // internal dispatch.
 
@@ -91,6 +95,7 @@ private:
   std::function<void()> m_clearPreviewFn;
   std::function<void()> m_pauseRuntimeFn;
   std::function<void()> m_resumeRuntimeFn;
+  std::function<script::ScriptEngine *()> m_getScriptEngineFn;
   bool m_previewRunning = false;
 
 public:
@@ -120,6 +125,10 @@ public:
 
   void SetResumeRuntimeFn(std::function<void()> fn) {
     m_resumeRuntimeFn = std::move(fn);
+  }
+
+  void SetGetScriptEngineFn(std::function<script::ScriptEngine *()> fn) {
+    m_getScriptEngineFn = std::move(fn);
   }
 
 private:

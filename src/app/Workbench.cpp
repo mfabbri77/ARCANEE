@@ -152,6 +152,13 @@ bool Workbench::initialize(render::RenderDevice *device,
     }
   });
 
+  m_uiShell->SetGetScriptEngineFn([this]() -> script::ScriptEngine * {
+    if (m_runtime) {
+      return m_runtime->getScriptEngine();
+    }
+    return nullptr;
+  });
+
   LOG_INFO("Workbench: UIShell initialized with preview callbacks");
 #endif
 

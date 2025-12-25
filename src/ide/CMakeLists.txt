@@ -59,6 +59,7 @@ target_link_libraries(arcanee_ide PUBLIC
     nlohmann_json::nlohmann_json
     spdlog::spdlog
     Diligent-Imgui
+    squirrel_static     # For ScriptEngine access in DapClient
 )
 
 target_compile_features(arcanee_ide PUBLIC cxx_std_17)

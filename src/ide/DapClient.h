@@ -5,6 +5,10 @@
 #include <string>
 #include <vector>
 
+namespace arcanee::script {
+class ScriptEngine; // Forward declaration
+}
+
 namespace arcanee::ide {
 
 struct BreakpointInfo {
@@ -34,6 +38,12 @@ class DapClient {
 public:
   DapClient();
   ~DapClient();
+
+  // Connect to ScriptEngine for real debugging
+  void SetScriptEngine(script::ScriptEngine *engine) {
+    m_scriptEngine = engine;
+  }
+  script::ScriptEngine *GetScriptEngine() const { return m_scriptEngine; }
 
   // Session management
   bool Launch(const std::string &scriptPath);
@@ -68,10 +78,11 @@ public:
   void SetOnOutput(OutputCallback cb) { m_onOutput = cb; }
 
 private:
-  // MVP: In-process debug simulation
+  // MVP: In-process debug simulation (fallback when no ScriptEngine)
   void SimulateStop(const std::string &reason, int line,
                     const std::string &file);
 
+  script::ScriptEngine *m_scriptEngine = nullptr;
   DebugState m_state = DebugState::Disconnected;
   std::vector<BreakpointInfo> m_breakpoints;
   std::vector<StackFrame> m_callStack;
