@@ -21,6 +21,7 @@
 #include "common/Log.h"
 #include "platform/Time.h"
 #include "vfs/Vfs.h"
+#include <algorithm>
 #include <cstdarg>
 #include <optional>
 #include <sqstdaux.h>
@@ -91,14 +92,92 @@ SQInteger runtimeErrorHandler(HSQUIRRELVM v) {
   return 0;
 }
 
-// Watchdog hook
-void debugHook(HSQUIRRELVM v, SQInteger /*type*/, const SQChar * /*sourcename*/,
-               SQInteger /*line*/, const SQChar * /*funcname*/) {
+// Debug and watchdog hook
+void debugHook(HSQUIRRELVM v, SQInteger type, const SQChar *sourcename,
+               SQInteger line, const SQChar *funcname) {
   ScriptEngine *engine = (ScriptEngine *)sq_getforeignptr(v);
-  if (engine && engine->m_watchdogEnabled) {
+  if (!engine)
+    return;
+
+  // Watchdog check (timeout)
+  if (engine->m_watchdogEnabled) {
     double elapsed = platform::Time::now() - engine->m_executionStartTime;
     if (elapsed > engine->m_watchdogTimeout) {
       sq_throwerror(v, "Watchdog timeout: Execution time limit exceeded");
+      return;
+    }
+  }
+
+  // Debugger check - only on line events (type 'l')
+  if (engine->m_debugEnabled && type == 'l') {
+    bool shouldStop = false;
+    std::string stopReason;
+    std::string file = sourcename ? sourcename : "";
+
+    // Check breakpoints
+    for (const auto &bp : engine->m_breakpoints) {
+      if (bp.enabled && bp.line == static_cast<int>(line)) {
+        // Check if filename matches (may need path normalization)
+        if (file.find(bp.file) != std::string::npos ||
+            bp.file.find(file) != std::string::npos || file == bp.file) {
+          shouldStop = true;
+          stopReason = "breakpoint";
+          break;
+        }
+      }
+    }
+
+    // Check step action
+    if (!shouldStop && engine->m_debugAction != DebugAction::None) {
+      switch (engine->m_debugAction) {
+      case DebugAction::StepIn:
+        shouldStop = true;
+        stopReason = "step";
+        break;
+      case DebugAction::StepOver: {
+        // Stop if same or lower depth
+        SQInteger depth = 0;
+        SQStackInfos si;
+        while (SQ_SUCCEEDED(sq_stackinfos(v, depth, &si)))
+          depth++;
+        if (static_cast<int>(depth) <= engine->m_stepStartDepth) {
+          shouldStop = true;
+          stopReason = "step";
+        }
+        break;
+      }
+      case DebugAction::StepOut: {
+        // Stop if lower depth (returned from function)
+        SQInteger depth = 0;
+        SQStackInfos si;
+        while (SQ_SUCCEEDED(sq_stackinfos(v, depth, &si)))
+          depth++;
+        if (static_cast<int>(depth) < engine->m_stepStartDepth) {
+          shouldStop = true;
+          stopReason = "step";
+        }
+        break;
+      }
+      case DebugAction::Continue:
+        // Only stop at breakpoints (already checked above)
+        break;
+      default:
+        break;
+      }
+    }
+
+    if (shouldStop) {
+      engine->m_debugAction = DebugAction::None;
+      engine->m_debugPaused = true;
+
+      // Notify callback
+      if (engine->m_onDebugStop) {
+        engine->m_onDebugStop(static_cast<int>(line), file, stopReason);
+      }
+
+      // Note: In a real implementation, we would need to block here
+      // until the debugger signals to continue. For cooperative debugging,
+      // we set m_debugPaused and the main loop checks this flag.
     }
   }
 }
@@ -106,14 +185,14 @@ void debugHook(HSQUIRRELVM v, SQInteger /*type*/, const SQChar * /*sourcename*/,
 class ScopedWatchdog {
 public:
   explicit ScopedWatchdog(ScriptEngine *engine) : m_engine(engine) {
-    if (m_engine->m_watchdogEnabled) {
+    if (m_engine->m_watchdogEnabled && !m_engine->m_debugEnabled) {
       m_engine->m_executionStartTime = platform::Time::now();
       // Hook on lines to catch infinite loops (while(true))
       sq_setnativedebughook(m_engine->getVm(), debugHook);
     }
   }
   ~ScopedWatchdog() {
-    if (m_engine->m_watchdogEnabled) {
+    if (m_engine->m_watchdogEnabled && !m_engine->m_debugEnabled) {
       sq_setnativedebughook(m_engine->getVm(), nullptr);
     }
   }
@@ -211,6 +290,196 @@ void ScriptEngine::registerArcaneeApi() {
 void ScriptEngine::setWatchdog(bool enable, f64 timeoutSec) {
   m_watchdogEnabled = enable;
   m_watchdogTimeout = timeoutSec;
+}
+
+// ========== DEBUGGER IMPLEMENTATION ==========
+
+void ScriptEngine::setDebugEnabled(bool enable) {
+  m_debugEnabled = enable;
+  if (m_vm) {
+    if (enable) {
+      sq_setnativedebughook(m_vm, debugHook);
+    } else {
+      sq_setnativedebughook(m_vm, nullptr);
+    }
+  }
+}
+
+void ScriptEngine::setDebugAction(DebugAction action) {
+  m_debugAction = action;
+  if (action != DebugAction::None) {
+    // Record current stack depth for step over/out
+    if (m_vm) {
+      SQInteger depth = 0;
+      SQStackInfos si;
+      while (SQ_SUCCEEDED(sq_stackinfos(m_vm, depth, &si)))
+        depth++;
+      m_stepStartDepth = static_cast<int>(depth);
+    }
+    m_debugPaused = false; // Resume execution
+  }
+}
+
+void ScriptEngine::addBreakpoint(const std::string &file, int line) {
+  // Check if already exists
+  for (auto &bp : m_breakpoints) {
+    if (bp.file == file && bp.line == line) {
+      bp.enabled = true;
+      return;
+    }
+  }
+  m_breakpoints.push_back({file, line, true});
+}
+
+void ScriptEngine::removeBreakpoint(const std::string &file, int line) {
+  m_breakpoints.erase(std::remove_if(m_breakpoints.begin(), m_breakpoints.end(),
+                                     [&](const DebugBreakpoint &bp) {
+                                       return bp.file == file &&
+                                              bp.line == line;
+                                     }),
+                      m_breakpoints.end());
+}
+
+void ScriptEngine::clearBreakpoints() { m_breakpoints.clear(); }
+
+std::vector<LocalVar> ScriptEngine::getLocals(int stackLevel) {
+  std::vector<LocalVar> result;
+  if (!m_vm)
+    return result;
+
+  SQUnsignedInteger idx = 0;
+  const SQChar *name;
+  while ((name = sq_getlocal(m_vm, stackLevel, idx)) != nullptr) {
+    LocalVar var;
+    var.name = name;
+    var.type = "unknown";
+
+    SQObjectType t = sq_gettype(m_vm, -1);
+    switch (t) {
+    case OT_NULL:
+      var.type = "null";
+      var.value = "null";
+      break;
+    case OT_INTEGER: {
+      SQInteger val;
+      sq_getinteger(m_vm, -1, &val);
+      var.type = "integer";
+      var.value = std::to_string(val);
+      break;
+    }
+    case OT_FLOAT: {
+      SQFloat val;
+      sq_getfloat(m_vm, -1, &val);
+      var.type = "float";
+      var.value = std::to_string(val);
+      break;
+    }
+    case OT_BOOL: {
+      SQBool val;
+      sq_getbool(m_vm, -1, &val);
+      var.type = "bool";
+      var.value = val ? "true" : "false";
+      break;
+    }
+    case OT_STRING: {
+      const SQChar *str;
+      sq_getstring(m_vm, -1, &str);
+      var.type = "string";
+      var.value = std::string("\"") + str + "\"";
+      break;
+    }
+    case OT_TABLE:
+      var.type = "table";
+      var.value = "{...}";
+      break;
+    case OT_ARRAY:
+      var.type = "array";
+      var.value = "[...]";
+      break;
+    case OT_CLOSURE:
+      var.type = "function";
+      var.value = "<function>";
+      break;
+    case OT_NATIVECLOSURE:
+      var.type = "native";
+      var.value = "<native>";
+      break;
+    case OT_CLASS:
+      var.type = "class";
+      var.value = "<class>";
+      break;
+    case OT_INSTANCE:
+      var.type = "instance";
+      var.value = "<instance>";
+      break;
+    default:
+      var.type = "unknown";
+      var.value = "?";
+      break;
+    }
+
+    sq_pop(m_vm, 1); // Pop the local value
+    result.push_back(var);
+    idx++;
+  }
+  return result;
+}
+
+std::vector<StackFrame> ScriptEngine::getCallStack() {
+  std::vector<StackFrame> result;
+  if (!m_vm)
+    return result;
+
+  SQInteger level = 0;
+  SQStackInfos si;
+  while (SQ_SUCCEEDED(sq_stackinfos(m_vm, level, &si))) {
+    StackFrame frame;
+    frame.id = static_cast<int>(level);
+    frame.name = si.funcname ? si.funcname : "<unknown>";
+    frame.file = si.source ? si.source : "<unknown>";
+    frame.line = static_cast<int>(si.line);
+    result.push_back(frame);
+    level++;
+  }
+  return result;
+}
+
+std::string ScriptEngine::sqValueToString(HSQUIRRELVM vm, SQInteger idx) {
+  SQObjectType t = sq_gettype(vm, idx);
+  switch (t) {
+  case OT_NULL:
+    return "null";
+  case OT_INTEGER: {
+    SQInteger val;
+    sq_getinteger(vm, idx, &val);
+    return std::to_string(val);
+  }
+  case OT_FLOAT: {
+    SQFloat val;
+    sq_getfloat(vm, idx, &val);
+    return std::to_string(val);
+  }
+  case OT_BOOL: {
+    SQBool val;
+    sq_getbool(vm, idx, &val);
+    return val ? "true" : "false";
+  }
+  case OT_STRING: {
+    const SQChar *str;
+    sq_getstring(vm, idx, &str);
+    return std::string("\"") + str + "\"";
+  }
+  case OT_TABLE:
+    return "{...}";
+  case OT_ARRAY:
+    return "[...]";
+  case OT_CLOSURE:
+    return "<function>";
+  case OT_NATIVECLOSURE:
+    return "<native>";
+  default:
+    return "?";
+  }
 }
 
 SQInteger ScriptEngine::require(HSQUIRRELVM vm) {

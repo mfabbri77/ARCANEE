@@ -14,12 +14,38 @@
 
 #include "common/Types.h"
 #include "vfs/Vfs.h"
+#include <functional>
 #include <squirrel.h>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 namespace arcanee::script {
+
+// Debug action for stepping
+enum class DebugAction { None, StepIn, StepOver, StepOut, Continue };
+
+// Breakpoint info
+struct DebugBreakpoint {
+  std::string file; // VFS path or sourcename
+  int line;
+  bool enabled = true;
+};
+
+// Local variable for inspection
+struct LocalVar {
+  std::string name;
+  std::string value;
+  std::string type;
+};
+
+// Stack frame for call stack
+struct StackFrame {
+  int id;
+  std::string name;
+  std::string file;
+  int line;
+};
 
 /**
  * @brief Manages the Squirrel VM instance and cartridge execution lifecycle.
@@ -76,6 +102,48 @@ public:
    */
   bool callDraw(f64 alpha);
 
+  // ========== DEBUGGER API ==========
+
+  /**
+   * @brief Enable/disable debugging mode.
+   */
+  void setDebugEnabled(bool enable);
+  bool isDebugEnabled() const { return m_debugEnabled; }
+
+  /**
+   * @brief Check if VM is paused at breakpoint/step.
+   */
+  bool isPaused() const { return m_debugPaused; }
+
+  /**
+   * @brief Set debug action (called by DapClient).
+   */
+  void setDebugAction(DebugAction action);
+
+  /**
+   * @brief Breakpoint management.
+   */
+  void addBreakpoint(const std::string &file, int line);
+  void removeBreakpoint(const std::string &file, int line);
+  void clearBreakpoints();
+  const std::vector<DebugBreakpoint> &getBreakpoints() const {
+    return m_breakpoints;
+  }
+
+  /**
+   * @brief Inspection (call when paused).
+   */
+  std::vector<LocalVar> getLocals(int stackLevel = 0);
+  std::vector<StackFrame> getCallStack();
+
+  /**
+   * @brief Callback when debugger stops (breakpoint or step).
+   * Called with line number and source file.
+   */
+  using DebugStopCallback = std::function<void(
+      int line, const std::string &file, const std::string &reason)>;
+  void setOnDebugStop(DebugStopCallback cb) { m_onDebugStop = std::move(cb); }
+
 private:
   HSQUIRRELVM m_vm = nullptr;
   vfs::IVfs *m_vfs = nullptr;
@@ -99,6 +167,17 @@ private:
   bool m_watchdogEnabled = false;
   f64 m_watchdogTimeout = 0.5; // Default 500ms
   f64 m_executionStartTime = 0.0;
+
+  // Debugger state
+  bool m_debugEnabled = false;
+  bool m_debugPaused = false;
+  DebugAction m_debugAction = DebugAction::None;
+  int m_stepStartDepth = 0;
+  std::vector<DebugBreakpoint> m_breakpoints;
+  DebugStopCallback m_onDebugStop;
+
+  // Helper for value to string conversion
+  std::string sqValueToString(HSQUIRRELVM vm, SQInteger idx);
 
 public:
   /**
