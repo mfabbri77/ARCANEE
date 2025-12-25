@@ -140,6 +140,18 @@ bool Workbench::initialize(render::RenderDevice *device,
     }
   });
 
+  m_uiShell->SetPauseRuntimeFn([this]() {
+    if (m_runtime) {
+      m_runtime->pause();
+    }
+  });
+
+  m_uiShell->SetResumeRuntimeFn([this]() {
+    if (m_runtime) {
+      m_runtime->resume();
+    }
+  });
+
   LOG_INFO("Workbench: UIShell initialized with preview callbacks");
 #endif
 

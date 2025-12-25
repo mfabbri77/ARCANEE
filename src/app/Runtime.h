@@ -66,6 +66,11 @@ public:
   // Canvas2D accessor for IDE preview
   render::Canvas2D *getCanvas2D() const { return m_canvas2d.get(); }
 
+  // Pause/resume for debugger synchronization
+  void pause() { m_isPaused = true; }
+  void resume() { m_isPaused = false; }
+  bool isPaused() const { return m_isPaused; }
+
 private:
   void initSubsystems();
   void shutdownSubsystems();
@@ -76,6 +81,7 @@ private:
   bool m_isRunning;
   bool m_isHeadless = false;
   bool m_isBenchmark = false;
+  bool m_isPaused = false;
   int m_benchmarkFrames = 0;
 
   // Subsystems

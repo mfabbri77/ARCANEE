@@ -355,6 +355,10 @@ u64 Runtime::getSimStateHash() const {
 }
 
 void Runtime::update(f64 dt) {
+  // Skip update when paused (debugger sync)
+  if (m_isPaused)
+    return;
+
   if (m_cartridge) {
     m_cartridge->update(dt);
   }

@@ -71,10 +71,10 @@ void DapClient::StepIn() {
       m_onOutput("console", "[DAP] Step In");
     }
     // MVP: Simulate stepping to next line
-    if (!m_callStack.empty()) {
-      int nextLine = m_callStack[0].line + 1;
-      SimulateStop("step", nextLine, m_callStack[0].file);
-    }
+    int currentLine = m_callStack.empty() ? 1 : m_callStack[0].line;
+    std::string currentFile =
+        m_callStack.empty() ? m_currentScript : m_callStack[0].file;
+    SimulateStop("step", currentLine + 1, currentFile);
   }
 }
 
@@ -84,10 +84,10 @@ void DapClient::StepOver() {
     if (m_onOutput) {
       m_onOutput("console", "[DAP] Step Over");
     }
-    if (!m_callStack.empty()) {
-      int nextLine = m_callStack[0].line + 1;
-      SimulateStop("step", nextLine, m_callStack[0].file);
-    }
+    int currentLine = m_callStack.empty() ? 1 : m_callStack[0].line;
+    std::string currentFile =
+        m_callStack.empty() ? m_currentScript : m_callStack[0].file;
+    SimulateStop("step", currentLine + 1, currentFile);
   }
 }
 
@@ -97,10 +97,16 @@ void DapClient::StepOut() {
     if (m_onOutput) {
       m_onOutput("console", "[DAP] Step Out");
     }
-    // MVP: Pop one stack frame
+    // MVP: If multiple frames, pop one. Otherwise just step.
     if (m_callStack.size() > 1) {
       m_callStack.erase(m_callStack.begin());
       SimulateStop("step", m_callStack[0].line, m_callStack[0].file);
+    } else {
+      // Just step to next line
+      int currentLine = m_callStack.empty() ? 1 : m_callStack[0].line;
+      std::string currentFile =
+          m_callStack.empty() ? m_currentScript : m_callStack[0].file;
+      SimulateStop("step", currentLine + 1, currentFile);
     }
   }
 }
@@ -115,6 +121,8 @@ void DapClient::Pause() {
 void DapClient::Stop() {
   std::lock_guard<std::mutex> lock(m_mutex);
   m_state = DebugState::Terminated;
+  m_callStack.clear();
+  m_locals.clear();
   if (m_onOutput) {
     m_onOutput("console", "[DAP] Debug session stopped.");
   }
@@ -153,9 +161,10 @@ void DapClient::RemoveBreakpoint(const std::string &file, int line) {
 void DapClient::ToggleBreakpoint(const std::string &file, int line) {
   std::lock_guard<std::mutex> lock(m_mutex);
 
-  for (auto &bp : m_breakpoints) {
-    if (bp.file == file && bp.line == line) {
-      bp.enabled = !bp.enabled;
+  // Check if exists - if so, remove it
+  for (auto it = m_breakpoints.begin(); it != m_breakpoints.end(); ++it) {
+    if (it->file == file && it->line == line) {
+      m_breakpoints.erase(it);
       return;
     }
   }
@@ -199,14 +208,15 @@ void DapClient::SimulateStop(const std::string &reason, int line,
   m_callStack.clear();
   m_callStack.push_back({0, "main", file, line});
   if (line > 10) {
-    m_callStack.push_back({1, "helper", file, 5});
+    m_callStack.push_back({1, "helper", file, line - 5});
   }
 
-  // Create simulated locals
+  // Create simulated locals that change based on line
   m_locals.clear();
-  m_locals.push_back({"x", "42", "integer"});
-  m_locals.push_back({"name", "\"test\"", "string"});
-  m_locals.push_back({"arr", "[1, 2, 3]", "array"});
+  m_locals.push_back({"line", std::to_string(line), "integer"});
+  m_locals.push_back({"x", std::to_string(line * 10), "integer"});
+  m_locals.push_back(
+      {"name", "\"step_" + std::to_string(line) + "\"", "string"});
 
   if (m_onStopped) {
     m_onStopped(reason, line, file);

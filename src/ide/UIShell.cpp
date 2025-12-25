@@ -65,6 +65,83 @@ void UIShell::RenderFrame() {
   // 1. Drain Queue (Apply mutations)
   m_queue.DrainAll();
 
+  // 1b. Global Debug Keybindings
+  {
+    auto &io = ImGui::GetIO();
+    bool shift = io.KeyShift;
+    bool ctrl = io.KeyCtrl;
+    DebugState state = m_dapClient.GetState();
+
+    // F5: Start Debugging / Continue
+    if (ImGui::IsKeyPressed(ImGuiKey_F5) && !shift && !ctrl) {
+      if (state == DebugState::Disconnected) {
+        Document *doc = m_documentSystem.GetActiveDocument();
+        if (doc) {
+          m_showDebugger = true;
+          m_showBreakpoints = true;
+          m_dapClient.Launch(doc->path);
+          if (m_pauseRuntimeFn)
+            m_pauseRuntimeFn(); // Pause preview when debugging starts
+        }
+      } else if (state == DebugState::Stopped) {
+        if (m_resumeRuntimeFn)
+          m_resumeRuntimeFn(); // Resume preview when continuing
+        m_dapClient.Continue();
+      }
+    }
+
+    // Shift+F5: Stop Debugging
+    if (ImGui::IsKeyPressed(ImGuiKey_F5) && shift && !ctrl) {
+      if (state != DebugState::Disconnected) {
+        m_dapClient.Stop();
+        if (m_resumeRuntimeFn)
+          m_resumeRuntimeFn(); // Resume preview when stopping debug
+      }
+    }
+
+    // F6: Pause
+    if (ImGui::IsKeyPressed(ImGuiKey_F6)) {
+      if (state == DebugState::Running) {
+        m_dapClient.Pause();
+        if (m_pauseRuntimeFn)
+          m_pauseRuntimeFn();
+      }
+    }
+
+    // F9: Toggle Breakpoint at cursor
+    if (ImGui::IsKeyPressed(ImGuiKey_F9)) {
+      Document *doc = m_documentSystem.GetActiveDocument();
+      if (doc) {
+        auto cursors = doc->buffer.GetCursors();
+        if (!cursors.empty()) {
+          int line = doc->buffer.GetLineFromOffset(cursors[0].head) + 1;
+          m_dapClient.ToggleBreakpoint(doc->path, line);
+        }
+      }
+    }
+
+    // F10: Step Over
+    if (ImGui::IsKeyPressed(ImGuiKey_F10)) {
+      if (state == DebugState::Stopped) {
+        m_dapClient.StepOver();
+      }
+    }
+
+    // F11: Step Into
+    if (ImGui::IsKeyPressed(ImGuiKey_F11) && !shift) {
+      if (state == DebugState::Stopped) {
+        m_dapClient.StepIn();
+      }
+    }
+
+    // Shift+F11: Step Out
+    if (ImGui::IsKeyPressed(ImGuiKey_F11) && shift) {
+      if (state == DebugState::Stopped) {
+        m_dapClient.StepOut();
+      }
+    }
+  }
+
   // 2. Setup Dockspace
   RenderDockspace();
 
@@ -141,9 +218,9 @@ void UIShell::RenderDockspace() {
     // IDE Layout:
     // +-------------------+---------------------------+----------------+
     // | Explorer (15%)    |  Editor (55%)             | Preview (30%)  |
-    // | Search            |                           |                |
+    // | Breakpoints       |                           |                |
     // +-------------------+---------------------------+----------------+
-    //                     |  Output/Console/Problems (20%)             |
+    //                     |  Console/Output/Problems/Debugger (20%)    |
     //                     +--------------------------------------------+
 
     // Step 1: Split left sidebar (15%)
@@ -161,14 +238,21 @@ void UIShell::RenderDockspace() {
     ImGui::DockBuilderSplitNode(dock_center_area, ImGuiDir_Down, 0.25f,
                                 &dock_bottom, &dock_center);
 
+    // Step 4: Split left sidebar for Breakpoints (50% of left)
+    ImGuiID dock_left_top, dock_left_bottom;
+    ImGui::DockBuilderSplitNode(dock_left, ImGuiDir_Down, 0.4f,
+                                &dock_left_bottom, &dock_left_top);
+
     // Dock windows to their positions
-    ImGui::DockBuilderDockWindow("Project Explorer", dock_left);
-    ImGui::DockBuilderDockWindow("Search", dock_left);
+    ImGui::DockBuilderDockWindow("Project Explorer", dock_left_top);
+    ImGui::DockBuilderDockWindow("Search", dock_left_top);
+    ImGui::DockBuilderDockWindow("Breakpoints", dock_left_bottom);
     ImGui::DockBuilderDockWindow("Editor", dock_center);
     ImGui::DockBuilderDockWindow("Preview", dock_right);
-    ImGui::DockBuilderDockWindow("Output", dock_bottom);
     ImGui::DockBuilderDockWindow("Console", dock_bottom);
+    ImGui::DockBuilderDockWindow("Output", dock_bottom);
     ImGui::DockBuilderDockWindow("Problems", dock_bottom);
+    ImGui::DockBuilderDockWindow("Debugger", dock_bottom);
 
     ImGui::DockBuilderFinish(dockspace_id);
   }
@@ -255,29 +339,69 @@ void UIShell::RenderDockspace() {
       ImGui::EndMenu();
     }
 
-    // === RUN MENU ===
-    if (ImGui::BeginMenu("Run")) {
-      if (ImGui::MenuItem("Start Debugging", "F5")) {
-        m_showDebugger = true;
-        m_showBreakpoints = true;
-        Document *doc = m_documentSystem.GetActiveDocument();
-        if (doc)
-          m_dapClient.Launch(doc->path);
+    // === DEBUG MENU ===
+    if (ImGui::BeginMenu("Debug")) {
+      DebugState state = m_dapClient.GetState();
+
+      if (state == DebugState::Disconnected) {
+        if (ImGui::MenuItem("Start Debugging", "F5")) {
+          m_showDebugger = true;
+          m_showBreakpoints = true;
+          Document *doc = m_documentSystem.GetActiveDocument();
+          if (doc) {
+            m_dapClient.Launch(doc->path);
+            ImGui::SetWindowFocus("Debugger");
+          }
+        }
+      } else if (state == DebugState::Stopped) {
+        if (ImGui::MenuItem("Continue", "F5")) {
+          m_dapClient.Continue();
+        }
+      } else if (state == DebugState::Running) {
+        if (ImGui::MenuItem("Pause", "F6")) {
+          m_dapClient.Pause();
+        }
       }
-      if (ImGui::MenuItem("Stop", "Shift+F5")) {
-        m_dapClient.Stop();
+
+      if (state != DebugState::Disconnected) {
+        if (ImGui::MenuItem("Stop Debugging", "Shift+F5")) {
+          m_dapClient.Stop();
+        }
+        if (ImGui::MenuItem("Restart", "Ctrl+Shift+F5")) {
+          Document *doc = m_documentSystem.GetActiveDocument();
+          if (doc) {
+            m_dapClient.Stop();
+            m_dapClient.Launch(doc->path);
+          }
+        }
       }
+
       ImGui::Separator();
+
+      bool canStep = (state == DebugState::Stopped);
+      if (ImGui::MenuItem("Step Over", "F10", false, canStep)) {
+        m_dapClient.StepOver();
+      }
+      if (ImGui::MenuItem("Step Into", "F11", false, canStep)) {
+        m_dapClient.StepIn();
+      }
+      if (ImGui::MenuItem("Step Out", "Shift+F11", false, canStep)) {
+        m_dapClient.StepOut();
+      }
+
+      ImGui::Separator();
+
       if (ImGui::MenuItem("Toggle Breakpoint", "F9")) {
         Document *doc = m_documentSystem.GetActiveDocument();
         if (doc) {
           auto cursors = doc->buffer.GetCursors();
           if (!cursors.empty()) {
             int line = doc->buffer.GetLineFromOffset(cursors[0].head) + 1;
-            m_dapClient.SetBreakpoint(doc->path, line);
+            m_dapClient.ToggleBreakpoint(doc->path, line);
           }
         }
       }
+
       ImGui::EndMenu();
     }
 
@@ -389,20 +513,89 @@ void UIShell::RenderPanes() {
       const ParseResult *parseRes = m_parseService.GetHighlights(doc->path);
 
       // 1. Render Text
-      // Calculate gutter width for line numbers
+      // Calculate gutter width for line numbers (with space for breakpoint dot)
       char lineNumBuf[16];
       snprintf(lineNumBuf, sizeof(lineNumBuf), "%d", totalLines);
-      float gutterWidth = ImGui::CalcTextSize(lineNumBuf).x + 20.0f; // padding
+      float lineNumWidth = ImGui::CalcTextSize(lineNumBuf).x;
+      float breakpointDotRadius = 5.0f;
+      float gutterWidth = breakpointDotRadius * 2 + 8.0f + lineNumWidth + 10.0f;
+
+      // Get breakpoints and debug state for this file
+      auto breakpoints = m_dapClient.GetBreakpoints();
+      DebugState debugState = m_dapClient.GetState();
+      auto callStack = m_dapClient.GetCallStack();
+      int currentDebugLine = -1;
+      if (debugState == DebugState::Stopped && !callStack.empty() &&
+          callStack[0].file == doc->path) {
+        currentDebugLine = callStack[0].line; // 1-based
+      }
 
       for (int i = firstLine; i < lastLine; ++i) {
         std::string line = buffer.GetLine(i);
         uint32_t lineStart = buffer.GetLineStart(i); // Offset
+        int lineNum = i + 1;                         // 1-based line number
 
         ImGui::SetCursorPosY((float)i * lineHeight);
 
-        // Render line number in gutter
+        // Check if this line has a breakpoint
+        bool hasBreakpoint = false;
+        for (const auto &bp : breakpoints) {
+          if (bp.file == doc->path && bp.line == lineNum && bp.enabled) {
+            hasBreakpoint = true;
+            break;
+          }
+        }
+
+        // Get window draw list for custom rendering
+        auto *drawList = ImGui::GetWindowDrawList();
+        ImVec2 winPos = ImGui::GetWindowPos();
+        float scrollX = ImGui::GetScrollX();
+
+        // Calculate gutter rectangle for this line (for click detection)
+        ImVec2 gutterMin(winPos.x - scrollX,
+                         winPos.y - scrollY + (float)i * lineHeight);
+        ImVec2 gutterMax(winPos.x - scrollX + gutterWidth - 5.0f,
+                         gutterMin.y + lineHeight);
+
+        // Highlight current debug line (yellow background)
+        if (lineNum == currentDebugLine) {
+          ImVec2 rowMin(winPos.x - scrollX,
+                        winPos.y - scrollY + (float)i * lineHeight);
+          ImVec2 rowMax(winPos.x - scrollX + ImGui::GetWindowWidth(),
+                        rowMin.y + lineHeight);
+          drawList->AddRectFilled(rowMin, rowMax, IM_COL32(255, 255, 0, 40));
+          // Yellow arrow indicator
+          float arrowX = winPos.x - scrollX + breakpointDotRadius + 2;
+          float arrowY =
+              winPos.y - scrollY + (float)i * lineHeight + lineHeight / 2;
+          drawList->AddTriangleFilled(
+              ImVec2(arrowX - 4, arrowY - 4), ImVec2(arrowX + 4, arrowY),
+              ImVec2(arrowX - 4, arrowY + 4), IM_COL32(255, 200, 0, 255));
+        }
+
+        // Draw breakpoint red dot
+        if (hasBreakpoint) {
+          float dotX = winPos.x - scrollX + breakpointDotRadius + 2;
+          float dotY =
+              winPos.y - scrollY + (float)i * lineHeight + lineHeight / 2;
+          drawList->AddCircleFilled(ImVec2(dotX, dotY), breakpointDotRadius,
+                                    IM_COL32(255, 60, 60, 255));
+        }
+
+        // Invisible button for gutter click to toggle breakpoint
         ImGui::SetCursorPosX(0);
-        snprintf(lineNumBuf, sizeof(lineNumBuf), "%d", i + 1); // 1-based
+        ImGui::SetCursorPosY((float)i * lineHeight);
+        std::string gutterBtnId = "##gutter" + std::to_string(i);
+        if (ImGui::InvisibleButton(
+                gutterBtnId.c_str(),
+                ImVec2(gutterWidth - lineNumWidth - 5, lineHeight))) {
+          m_dapClient.ToggleBreakpoint(doc->path, lineNum);
+        }
+
+        // Render line number
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(gutterWidth - lineNumWidth - 5);
+        snprintf(lineNumBuf, sizeof(lineNumBuf), "%d", lineNum);
         ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(128, 128, 128, 255));
         ImGui::TextUnformatted(lineNumBuf);
         ImGui::PopStyleColor();
@@ -902,20 +1095,35 @@ void UIShell::RenderPanes() {
     if (ImGui::Begin("Debugger")) {
       DebugState state = m_dapClient.GetState();
 
+      // Status indicator
+      const char *stateText = "Disconnected";
+      ImVec4 stateColor = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
+      if (state == DebugState::Running) {
+        stateText = "Running";
+        stateColor = ImVec4(0.2f, 0.8f, 0.2f, 1.0f);
+      } else if (state == DebugState::Stopped) {
+        stateText = "Paused";
+        stateColor = ImVec4(1.0f, 0.8f, 0.2f, 1.0f);
+      } else if (state == DebugState::Terminated) {
+        stateText = "Terminated";
+        stateColor = ImVec4(0.8f, 0.3f, 0.3f, 1.0f);
+      }
+      ImGui::TextColored(stateColor, "Status: %s", stateText);
+
       if (state == DebugState::Disconnected) {
         Document *doc = m_documentSystem.GetActiveDocument();
-        if (doc && ImGui::Button("Launch Debug")) {
+        if (doc && ImGui::Button("Start Debugging (F5)")) {
           m_dapClient.Launch(doc->path);
         }
       } else if (state == DebugState::Stopped) {
-        if (ImGui::Button("Continue"))
+        if (ImGui::Button("Continue (F5)"))
           m_dapClient.Continue();
         ImGui::SameLine();
-        if (ImGui::Button("Step In"))
-          m_dapClient.StepIn();
-        ImGui::SameLine();
-        if (ImGui::Button("Step Over"))
+        if (ImGui::Button("Step Over (F10)"))
           m_dapClient.StepOver();
+        ImGui::SameLine();
+        if (ImGui::Button("Step Into (F11)"))
+          m_dapClient.StepIn();
         ImGui::SameLine();
         if (ImGui::Button("Step Out"))
           m_dapClient.StepOut();
@@ -923,41 +1131,67 @@ void UIShell::RenderPanes() {
         if (ImGui::Button("Stop"))
           m_dapClient.Stop();
       } else if (state == DebugState::Running) {
-        if (ImGui::Button("Pause"))
+        if (ImGui::Button("Pause (F6)"))
           m_dapClient.Pause();
         ImGui::SameLine();
         if (ImGui::Button("Stop"))
           m_dapClient.Stop();
       } else {
-        if (ImGui::Button("Disconnect"))
+        if (ImGui::Button("Restart"))
           m_dapClient.Disconnect();
       }
 
       ImGui::Separator();
 
       // Call Stack
-      ImGui::Text("Call Stack:");
       auto stack = m_dapClient.GetCallStack();
-      for (const auto &frame : stack) {
-        std::string label =
-            frame.name + " (" + std::to_string(frame.line) + ")";
-        if (ImGui::Selectable(label.c_str())) {
-          // Navigate to frame location
-          Document *doc = nullptr;
-          if (m_documentSystem.OpenDocument(frame.file, &doc).ok()) {
-            m_documentSystem.SetActiveDocument(doc);
-            doc->buffer.SetCursor(doc->buffer.GetLineStart(frame.line - 1));
+      if (ImGui::CollapsingHeader("Call Stack",
+                                  ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (stack.empty()) {
+          ImGui::TextDisabled("(no call stack)");
+        } else {
+          for (size_t i = 0; i < stack.size(); ++i) {
+            const auto &frame = stack[i];
+            std::string filename =
+                std::filesystem::path(frame.file).filename().string();
+            std::string label = frame.name + " @ " + filename + ":" +
+                                std::to_string(frame.line);
+
+            // Highlight current frame
+            if (i == 0) {
+              ImGui::PushStyleColor(ImGuiCol_Text,
+                                    ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
+            }
+
+            if (ImGui::Selectable(label.c_str())) {
+              // Navigate to frame location
+              Document *doc = nullptr;
+              if (m_documentSystem.OpenDocument(frame.file, &doc).ok()) {
+                m_documentSystem.SetActiveDocument(doc);
+                doc->buffer.SetCursor(doc->buffer.GetLineStart(frame.line - 1));
+              }
+            }
+
+            if (i == 0) {
+              ImGui::PopStyleColor();
+            }
           }
         }
       }
 
-      ImGui::Separator();
-
-      // Variables
-      ImGui::Text("Locals:");
-      auto locals = m_dapClient.GetLocals(0);
-      for (const auto &var : locals) {
-        ImGui::Text("  %s = %s", var.name.c_str(), var.value.c_str());
+      // Variables / Locals
+      if (ImGui::CollapsingHeader("Locals", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto locals = m_dapClient.GetLocals(0);
+        if (locals.empty()) {
+          ImGui::TextDisabled("(no local variables)");
+        } else {
+          for (const auto &var : locals) {
+            ImGui::Text("%s", var.name.c_str());
+            ImGui::SameLine(100);
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "%s",
+                               var.value.c_str());
+          }
+        }
       }
     }
     ImGui::End();

@@ -89,6 +89,8 @@ private:
   std::function<void *()> m_getPreviewTextureFn;
   std::function<void(uint32_t &, uint32_t &)> m_getPreviewSizeFn;
   std::function<void()> m_clearPreviewFn;
+  std::function<void()> m_pauseRuntimeFn;
+  std::function<void()> m_resumeRuntimeFn;
   bool m_previewRunning = false;
 
 public:
@@ -110,6 +112,14 @@ public:
 
   void SetClearPreviewFn(std::function<void()> fn) {
     m_clearPreviewFn = std::move(fn);
+  }
+
+  void SetPauseRuntimeFn(std::function<void()> fn) {
+    m_pauseRuntimeFn = std::move(fn);
+  }
+
+  void SetResumeRuntimeFn(std::function<void()> fn) {
+    m_resumeRuntimeFn = std::move(fn);
   }
 
 private:
@@ -135,8 +145,8 @@ private:
   bool m_showOutput = true;
   bool m_showConsole = false;
   bool m_showProblems = true;
-  bool m_showDebugger = false;    // Debug view only
-  bool m_showBreakpoints = false; // Debug view only
+  bool m_showDebugger = true;    // Docked in bottom panel
+  bool m_showBreakpoints = true; // Docked in left sidebar
   bool m_showLocalHistory = false;
   bool m_showPreview = true; // Preview pane on right
 
