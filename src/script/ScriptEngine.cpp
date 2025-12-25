@@ -99,6 +99,12 @@ void debugHook(HSQUIRRELVM v, SQInteger type, const SQChar *sourcename,
   if (!engine)
     return;
 
+  // Debug logging to verify hook is active
+  fprintf(stderr, "DEBUG_HOOK: Type=%c Line=%lld Source=%s\n", (char)type,
+          (long long)line, sourcename ? sourcename : "null");
+  // LOG_INFO("DEBUG_HOOK: Type=%c Line=%lld Source=%s", (char)type, line,
+  // sourcename ? sourcename : "null");
+
   // Watchdog check (timeout)
   if (engine->m_watchdogEnabled) {
     double elapsed = platform::Time::now() - engine->m_executionStartTime;
@@ -108,18 +114,62 @@ void debugHook(HSQUIRRELVM v, SQInteger type, const SQChar *sourcename,
     }
   }
 
+  // Handle explicit termination request
+  if (engine->m_terminateRequested) {
+    engine->m_terminateRequested = false;
+    sq_throwerror(v, "Execution terminated by user");
+    return;
+  }
+
   // Debugger check - only on line events (type 'l')
   if (engine->m_debugEnabled && type == 'l') {
     bool shouldStop = false;
     std::string stopReason;
     std::string file = sourcename ? sourcename : "";
 
+    // Debug logging for breakpoint state
+    // Only log occasionally or if size > 0 to diagnose
+    // if (engine->m_breakpoints.size() > 0) {
+    //    fprintf(stderr, "HOOK: Line %lld. BPs: %zu\n", (long long)line,
+    //    engine->m_breakpoints.size()); for(auto& b : engine->m_breakpoints) {
+    //        fprintf(stderr, "  - BP: %s:%d (En: %d)\n", b.file.c_str(),
+    //        b.line, b.enabled);
+    //    }
+    // }
+
     // Check breakpoints
     for (const auto &bp : engine->m_breakpoints) {
       if (bp.enabled && bp.line == static_cast<int>(line)) {
-        // Check if filename matches (may need path normalization)
-        if (file.find(bp.file) != std::string::npos ||
-            bp.file.find(file) != std::string::npos || file == bp.file) {
+        // Match Logic:
+        // 1. Exact match
+        // 2. Contains match (for partial paths)
+        // 3. Filename match (Fall-back for VFS vs Absolute path mismatch)
+
+        bool match = (file == bp.file);
+        if (!match && (file.find(bp.file) != std::string::npos ||
+                       bp.file.find(file) != std::string::npos)) {
+          match = true;
+        }
+
+        if (!match) {
+          // Extract filenames
+          auto sep1 = file.find_last_of("/\\");
+          std::string fn1 =
+              (sep1 == std::string::npos) ? file : file.substr(sep1 + 1);
+
+          auto sep2 = bp.file.find_last_of("/\\");
+          std::string fn2 =
+              (sep2 == std::string::npos) ? bp.file : bp.file.substr(sep2 + 1);
+
+          if (fn1 == fn2) {
+            match = true;
+          }
+        }
+
+        fprintf(stderr, "BP CHECK: Line %d. VM: '%s'. BP: '%s'. Match: %s\n",
+                (int)line, file.c_str(), bp.file.c_str(), match ? "YES" : "NO");
+
+        if (match) {
           shouldStop = true;
           stopReason = "breakpoint";
           break;
@@ -178,6 +228,16 @@ void debugHook(HSQUIRRELVM v, SQInteger type, const SQChar *sourcename,
       // Note: In a real implementation, we would need to block here
       // until the debugger signals to continue. For cooperative debugging,
       // we set m_debugPaused and the main loop checks this flag.
+      // UPDATE: We now block here to preserve stack state!
+      while (engine->m_debugPaused && !engine->m_terminateRequested) {
+        if (engine->m_onDebugUpdate) {
+          engine->m_onDebugUpdate();
+        } else {
+          // No UI loop available, just sleep (fallback)
+          // Note: using sleep implies we need <thread> and <chrono>
+          // Ideally we shouldn't hit this path if Workbench is attached.
+        }
+      }
     }
   }
 }
@@ -249,6 +309,17 @@ bool ScriptEngine::initialize(vfs::IVfs *vfs, ScriptConfig config) {
   sq_newslot(m_vm, -3, SQFalse);
   sq_pop(m_vm, 1); // Pop root
 
+  // Re-attach debug hook if debugging was enabled (persisted across reloads)
+  // Re-attach debug hook if debugging was enabled (persisted across reloads)
+  if (m_debugEnabled) {
+    fprintf(stderr, "DEBUG: ScriptEngine::initialize: m_debugEnabled is TRUE. "
+                    "Re-attaching hook.\n");
+    sq_setnativedebughook(m_vm, debugHook);
+  } else {
+    fprintf(stderr, "DEBUG: ScriptEngine::initialize: m_debugEnabled is FALSE. "
+                    "No hook attached.\n");
+  }
+
   LOG_INFO("Squirrel VM initialized");
   return true;
 }
@@ -295,6 +366,10 @@ void ScriptEngine::setWatchdog(bool enable, f64 timeoutSec) {
 // ========== DEBUGGER IMPLEMENTATION ==========
 
 void ScriptEngine::setDebugEnabled(bool enable) {
+  fprintf(stderr, "DEBUG: ScriptEngine::setDebugEnabled(%s). VM=%p\n",
+          enable ? "true" : "false", (void *)m_vm);
+  // LOG_INFO("ScriptEngine::setDebugEnabled(%s). VM=%p", enable ? "true" :
+  // "false", m_vm);
   m_debugEnabled = enable;
   if (m_vm) {
     if (enable) {
@@ -321,6 +396,7 @@ void ScriptEngine::setDebugAction(DebugAction action) {
 }
 
 void ScriptEngine::addBreakpoint(const std::string &file, int line) {
+  fprintf(stderr, "ScriptEngine::addBreakpoint %s:%d\n", file.c_str(), line);
   // Check if already exists
   for (auto &bp : m_breakpoints) {
     if (bp.file == file && bp.line == line) {
@@ -332,6 +408,7 @@ void ScriptEngine::addBreakpoint(const std::string &file, int line) {
 }
 
 void ScriptEngine::removeBreakpoint(const std::string &file, int line) {
+  fprintf(stderr, "ScriptEngine::removeBreakpoint %s:%d\n", file.c_str(), line);
   m_breakpoints.erase(std::remove_if(m_breakpoints.begin(), m_breakpoints.end(),
                                      [&](const DebugBreakpoint &bp) {
                                        return bp.file == file &&
@@ -649,6 +726,7 @@ bool ScriptEngine::callUpdate(f64 dt) {
   sq_pushroottable(m_vm);
   sq_pushfloat(m_vm, static_cast<SQFloat>(dt));
 
+  m_terminateRequested = false; // Reset flag at start of frame
   ScopedWatchdog watchdog(this);
   if (SQ_FAILED(sq_call(m_vm, 2, SQFalse, SQTrue))) {
     LOG_ERROR("Failed to call update(dt)");
@@ -680,6 +758,15 @@ bool ScriptEngine::callDraw(f64 alpha) {
 
   sq_pop(m_vm, 2);
   return true;
+}
+
+void ScriptEngine::terminate() {
+  if (m_vm) {
+    m_terminateRequested = true;
+    m_debugPaused = false; // Force resume so we can hit the hook
+    // Ensure debug hook is enabled so we catch the next instruction
+    sq_setnativedebughook(m_vm, debugHook);
+  }
 }
 
 } // namespace arcanee::script

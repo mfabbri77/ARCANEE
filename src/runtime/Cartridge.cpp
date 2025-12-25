@@ -123,7 +123,7 @@ bool Cartridge::load(const std::string &fsPath) {
   // TODO: Read manifest.toml here to populate m_config
   // For now we assume defaults and entry point "main.nut"
 
-  // 2. Initialize ScriptEngine with the VFS reference
+  // 2. Initialize ScriptEngine with the VFS reference (but don't execute yet)
   script::ScriptEngine::ScriptConfig scriptConfig;
   scriptConfig.debugInfo = true; // Enable debug info by default
   if (!m_scriptEngine->initialize(m_vfs, scriptConfig)) {
@@ -132,7 +132,19 @@ bool Cartridge::load(const std::string &fsPath) {
     return false;
   }
 
-  // 3. Compile/Execute entry script
+  transition(CartridgeState::Initialized);
+  LOG_INFO("Cartridge loaded (not running). Call start() to execute.");
+  return true;
+}
+
+bool Cartridge::start() {
+  if (m_state != CartridgeState::Initialized) {
+    LOG_ERROR("Cannot start: cartridge not in Initialized state (current: %s)",
+              cartridgeStateToString(m_state));
+    return false;
+  }
+
+  // 1. Compile/Execute entry script
   std::string entryPath = "cart:/" + m_config.entry;
   LOG_INFO("Executing entry script: %s", entryPath.c_str());
 
@@ -142,21 +154,11 @@ bool Cartridge::load(const std::string &fsPath) {
     return false;
   }
 
-  // 4. Call init() if exists (it MUST exist per spec)
-  // For V0.1 we might want to make it optional if not strict yet, but spec says
-  // mandatory We'll trust the script engine has set up the VM state. NOTE:
-  // init() is called by us here? or does executeScript run global scope which
-  // defines init/update/draw? executeScript runs global scope. init() is a
-  // function *defined* there. We must call it now.
-
-  // 4. Call init() if exists
+  // 2. Call init() if exists
   m_scriptEngine->callInit();
 
-  transition(CartridgeState::Initialized);
-
-  // Auto-start for now
   transition(CartridgeState::Running);
-
+  LOG_INFO("Cartridge started and running");
   return true;
 }
 

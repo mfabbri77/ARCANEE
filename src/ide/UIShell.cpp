@@ -72,18 +72,36 @@ void UIShell::RenderFrame() {
     bool ctrl = io.KeyCtrl;
     DebugState state = m_dapClient.GetState();
 
+    // Ctrl+R: Run Without Debugging
+    if ((ImGui::IsKeyPressed(ImGuiKey_R) && ctrl && !shift)) {
+      bool isLoaded = m_isCartridgeLoadedFn && m_isCartridgeLoadedFn();
+      bool isRunning = m_isCartridgeRunningFn && m_isCartridgeRunningFn();
+      if (isLoaded && !isRunning && state == DebugState::Disconnected) {
+        if (m_startCartridgeFn)
+          m_startCartridgeFn();
+        if (m_resumeRuntimeFn)
+          m_resumeRuntimeFn();
+      }
+    }
+
     // F5: Start Debugging / Continue
     if (ImGui::IsKeyPressed(ImGuiKey_F5) && !shift && !ctrl) {
       if (state == DebugState::Disconnected) {
-        Document *doc = m_documentSystem.GetActiveDocument();
-        if (doc) {
+        bool isLoaded = m_isCartridgeLoadedFn && m_isCartridgeLoadedFn();
+        bool isRunning = m_isCartridgeRunningFn && m_isCartridgeRunningFn();
+
+        if (!isRunning) { // Only start debug if not already running natively
           m_showDebugger = true;
           m_showBreakpoints = true;
           // Connect DapClient to ScriptEngine if available
           if (m_getScriptEngineFn) {
             m_dapClient.SetScriptEngine(m_getScriptEngineFn());
           }
-          m_dapClient.Launch(doc->path);
+
+          Document *doc = m_documentSystem.GetActiveDocument();
+          std::string launchPath = doc ? doc->path : "";
+          m_dapClient.Launch(launchPath);
+
           if (m_pauseRuntimeFn)
             m_pauseRuntimeFn(); // Pause preview when debugging starts
         }
@@ -275,13 +293,19 @@ void UIShell::RenderDockspace() {
       }
       if (ImGui::MenuItem("Open Folder...", "Ctrl+O")) {
         // Start from samples/ directory if it exists
-        std::filesystem::path samplesPath =
-            std::filesystem::current_path() / "samples";
+        std::filesystem::path current = std::filesystem::current_path();
+        std::filesystem::path samplesPath = current / "samples";
+        std::filesystem::path parentSamplesPath =
+            current.parent_path() / "samples";
+
         if (std::filesystem::exists(samplesPath) &&
             std::filesystem::is_directory(samplesPath)) {
           m_folderDialogPath = samplesPath.string();
+        } else if (std::filesystem::exists(parentSamplesPath) &&
+                   std::filesystem::is_directory(parentSamplesPath)) {
+          m_folderDialogPath = parentSamplesPath.string();
         } else {
-          m_folderDialogPath = std::filesystem::current_path().string();
+          m_folderDialogPath = current.string();
         }
         m_folderDialogError.clear();
         m_showFolderDialog = true;
@@ -343,41 +367,102 @@ void UIShell::RenderDockspace() {
       ImGui::EndMenu();
     }
 
-    // === DEBUG MENU ===
-    if (ImGui::BeginMenu("Debug")) {
+    // === RUN MENU ===
+    if (ImGui::BeginMenu("Run")) {
       DebugState state = m_dapClient.GetState();
+      bool isRunning = m_isCartridgeRunningFn && m_isCartridgeRunningFn();
+      bool isLoaded = m_isCartridgeLoadedFn && m_isCartridgeLoadedFn();
 
-      if (state == DebugState::Disconnected) {
-        if (ImGui::MenuItem("Start Debugging", "F5")) {
+      // 1. Run Without Debugging (Always visible)
+      bool canRunNoDebug = (state == DebugState::Disconnected) && !isRunning;
+      if (ImGui::MenuItem("Run Without Debugging", "Ctrl+R", false,
+                          isLoaded && canRunNoDebug)) {
+        if (m_startCartridgeFn)
+          m_startCartridgeFn();
+        if (m_resumeRuntimeFn)
+          m_resumeRuntimeFn();
+      }
+
+      // 2. Start Debugging / Continue (Contextual label)
+      const char *debugLabel =
+          (state == DebugState::Stopped) ? "Continue" : "Start Debugging";
+      bool canDebug = isLoaded && (state == DebugState::Disconnected ||
+                                   state == DebugState::Stopped);
+      // If we are native running, we can't attach debug yet regarding this
+      // logic
+      if (isRunning && state == DebugState::Disconnected)
+        canDebug = false;
+
+      if (ImGui::MenuItem(debugLabel, "F5", false, canDebug)) {
+        if (state == DebugState::Stopped) {
+          if (m_resumeRuntimeFn)
+            m_resumeRuntimeFn();
+          m_dapClient.Continue();
+        } else {
           m_showDebugger = true;
           m_showBreakpoints = true;
           Document *doc = m_documentSystem.GetActiveDocument();
+          if (m_getScriptEngineFn) {
+            m_dapClient.SetScriptEngine(m_getScriptEngineFn());
+          }
+
+          // Smart Root Detection for Debugger
+          // We need m_projectRoot in DapClient to match the Cartridge Root
+          std::string debugRoot = m_projectSystem.GetRoot().fullPath;
+          if (doc) {
+            std::filesystem::path p = doc->path;
+            // If debugging main.nut, its folder is the root
+            if (p.filename() == "main.nut") {
+              debugRoot = p.parent_path().string();
+            }
+          }
+          m_dapClient.SetProjectRoot(debugRoot);
+
+          // 1. Ensure clean state by stopping if running
+          // This prevents debug hooks from firing *during* Launch (inside
+          // ImGui), which would cause a deadlock/recursive loop.
+          if (m_isCartridgeRunningFn && m_isCartridgeRunningFn()) {
+            if (m_stopCartridgeFn) {
+              fprintf(stderr,
+                      "UIShell: Stopping cartridge before debug launch...\n");
+              m_stopCartridgeFn();
+            }
+          }
+
+          // 2. Launch DAP (Syncs BPs, Enable Debug Mode)
           if (doc) {
             m_dapClient.Launch(doc->path);
-            ImGui::SetWindowFocus("Debugger");
+          } else {
+            m_dapClient.Launch("");
           }
-        }
-      } else if (state == DebugState::Stopped) {
-        if (ImGui::MenuItem("Continue", "F5")) {
-          m_dapClient.Continue();
-        }
-      } else if (state == DebugState::Running) {
-        if (ImGui::MenuItem("Pause", "F6")) {
-          m_dapClient.Pause();
+          ImGui::SetWindowFocus("Debugger");
+
+          // 3. Start Cartridge
+          // This will execute the entry script. If BPs are hit, the engine will
+          // block.
+          if (m_startCartridgeFn) {
+            fprintf(stderr, "UIShell: Calling StartCartridgeFn...\n");
+            m_startCartridgeFn();
+          } else {
+            fprintf(stderr, "UIShell: m_startCartridgeFn is NULL!\n");
+          }
         }
       }
 
-      if (state != DebugState::Disconnected) {
-        if (ImGui::MenuItem("Stop Debugging", "Shift+F5")) {
-          m_dapClient.Stop();
-        }
-        if (ImGui::MenuItem("Restart", "Ctrl+Shift+F5")) {
-          Document *doc = m_documentSystem.GetActiveDocument();
-          if (doc) {
-            m_dapClient.Stop();
-            m_dapClient.Launch(doc->path);
-          }
-        }
+      // 3. Pause
+      bool canPause = (state == DebugState::Running);
+      if (ImGui::MenuItem("Pause", "F6", false, canPause)) {
+        m_dapClient.Pause();
+      }
+
+      // 4. Stop
+      bool canStop = isRunning || (state != DebugState::Disconnected);
+      if (ImGui::MenuItem("Stop", "Shift+F5", false, canStop)) {
+        // Stop Debugger
+        m_dapClient.Stop();
+        // Stop/Reload Runtime
+        if (m_stopCartridgeFn)
+          m_stopCartridgeFn();
       }
 
       ImGui::Separator();
@@ -593,6 +678,7 @@ void UIShell::RenderPanes() {
         if (ImGui::InvisibleButton(
                 gutterBtnId.c_str(),
                 ImVec2(gutterWidth - lineNumWidth - 5, lineHeight))) {
+          fprintf(stderr, "UIShell: Gutter clicked line %d\n", lineNum);
           m_dapClient.ToggleBreakpoint(doc->path, lineNum);
         }
 

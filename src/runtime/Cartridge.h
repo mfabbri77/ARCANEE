@@ -86,10 +86,19 @@ public:
   /**
    * @brief Load a cartridge from the given path (directory or archive).
    *
-   * Transitions: Unloaded -> Loading -> Initialized (on success) or Faulted (on
-   * error).
+   * Only mounts VFS - does NOT execute scripts.
+   * Transitions: Unloaded -> Loading -> Initialized (on success) or Faulted.
    */
   bool load(const std::string &fsPath);
+
+  /**
+   * @brief Start executing the loaded cartridge.
+   *
+   * Executes the entry script and calls init().
+   * Call this after load() to begin running.
+   * Transitions: Initialized -> Running.
+   */
+  bool start();
 
   /**
    * @brief Unload the current cartridge.
@@ -115,6 +124,9 @@ public:
   void draw(double alpha);
 
   CartridgeState getState() const { return m_state; }
+
+  // Get the loaded entry script path for debugger
+  std::string getEntryPath() const { return "cart:/" + m_config.entry; }
 
 private:
   void transition(CartridgeState newState);

@@ -40,10 +40,13 @@ public:
   ~DapClient();
 
   // Connect to ScriptEngine for real debugging
-  void SetScriptEngine(script::ScriptEngine *engine) {
-    m_scriptEngine = engine;
-  }
+  void SetScriptEngine(script::ScriptEngine *engine);
+  // void SetScriptEngine(script::ScriptEngine *engine) {
+  //   m_scriptEngine = engine;
+  // }
   script::ScriptEngine *GetScriptEngine() const { return m_scriptEngine; }
+
+  void SetProjectRoot(const std::string &root) { m_projectRoot = root; }
 
   // Session management
   bool Launch(const std::string &scriptPath);
@@ -78,22 +81,32 @@ public:
   void SetOnOutput(OutputCallback cb) { m_onOutput = cb; }
 
 private:
+  // Internal helpers
+  std::string ToVfsPath(const std::string &hostPath);
+  std::string ToHostPath(const std::string &vfsPath);
+
   // MVP: In-process debug simulation (fallback when no ScriptEngine)
   void SimulateStop(const std::string &reason, int line,
                     const std::string &file);
 
-  script::ScriptEngine *m_scriptEngine = nullptr;
   DebugState m_state = DebugState::Disconnected;
-  std::vector<BreakpointInfo> m_breakpoints;
+  mutable std::mutex m_mutex;
   std::vector<StackFrame> m_callStack;
   std::vector<Variable> m_locals;
-
-  StoppedCallback m_onStopped;
-  OutputCallback m_onOutput;
-
-  mutable std::mutex m_mutex;
-  int m_nextBreakpointId = 1;
+  std::vector<BreakpointInfo> m_breakpoints;
   std::string m_currentScript;
+  int m_currentLine = 0;
+  int m_nextBreakpointId = 1;
+
+  std::string m_projectRoot;
+
+  // Real engine connection
+  script::ScriptEngine *m_scriptEngine = nullptr;
+
+  // Callbacks
+  std::function<void(const std::string &, const std::string &)> m_onOutput;
+  std::function<void(const std::string &, int, const std::string &)>
+      m_onStopped;
 };
 
 } // namespace arcanee::ide

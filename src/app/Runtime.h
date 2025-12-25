@@ -55,8 +55,14 @@ public:
   int runHeadless(int ticks);
   u64 getSimStateHash() const;
 
-  // Public for now, or make private and called from ctor
+  // Cartridge management (separate load from run for IDE workflow)
   bool loadCartridge(const std::string &path);
+  bool startCartridge();         // Start executing loaded cartridge
+  void scheduleStartCartridge(); // Schedule start for next main loop iteration
+                                 // (safe for UI callbacks)
+  bool stopCartridge();          // Stop execution and reload (reset)
+  bool isCartridgeLoaded() const;
+  bool isCartridgeRunning() const;
 
   // Request application exit
   void requestExit() { m_isRunning = false; }
@@ -78,6 +84,8 @@ private:
   void initSubsystems();
   void shutdownSubsystems();
 
+  void onDebugUpdate();
+
   void update(f64 dt);
   void draw(f64 alpha);
 
@@ -85,6 +93,7 @@ private:
   bool m_isHeadless = false;
   bool m_isBenchmark = false;
   bool m_isPaused = false;
+  bool m_pendingStart = false;
   int m_benchmarkFrames = 0;
 
   // Subsystems
@@ -102,6 +111,7 @@ private:
   render::CBufPreset m_cbufPreset = render::CBufPreset::Medium_16_9;
 
   std::unique_ptr<runtime::Cartridge> m_cartridge;
+  std::string m_currentCartridgePath;
   std::vector<u32> m_palette;
 
   // Workbench (MS-04)

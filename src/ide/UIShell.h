@@ -88,8 +88,14 @@ private:
   std::string m_newProjectError;
   std::function<void()> m_requestExitFn;
 
-  // Preview callbacks
+  // Cartridge control callbacks
   std::function<bool(const std::string &)> m_loadCartridgeFn;
+  std::function<bool()> m_startCartridgeFn;
+  std::function<bool()> m_stopCartridgeFn;
+  std::function<bool()> m_isCartridgeLoadedFn;
+  std::function<bool()> m_isCartridgeRunningFn;
+
+  // Preview callbacks
   std::function<void *()> m_getPreviewTextureFn;
   std::function<void(uint32_t &, uint32_t &)> m_getPreviewSizeFn;
   std::function<void()> m_clearPreviewFn;
@@ -105,6 +111,22 @@ public:
 
   void SetLoadCartridgeFn(std::function<bool(const std::string &)> fn) {
     m_loadCartridgeFn = std::move(fn);
+  }
+
+  void SetStartCartridgeFn(std::function<bool()> fn) {
+    m_startCartridgeFn = std::move(fn);
+  }
+
+  void SetStopCartridgeFn(std::function<bool()> fn) {
+    m_stopCartridgeFn = std::move(fn);
+  }
+
+  void SetIsCartridgeLoadedFn(std::function<bool()> fn) {
+    m_isCartridgeLoadedFn = std::move(fn);
+  }
+
+  void SetIsCartridgeRunningFn(std::function<bool()> fn) {
+    m_isCartridgeRunningFn = std::move(fn);
   }
 
   void SetGetPreviewTextureFn(std::function<void *()> fn) {

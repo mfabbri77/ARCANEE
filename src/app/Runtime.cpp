@@ -198,9 +198,17 @@ void Runtime::initSubsystems() {
     m_workbench = std::make_unique<Workbench>();
     if (!m_workbench->initialize(m_renderDevice.get(), m_window.get(), this)) {
       LOG_ERROR("Failed to initialize Workbench");
-      // Non-fatal?
+      // Non-fatal, but validation required
     }
-    // Forward SDL events to Workbench for ImGui input
+  }
+
+  // Register Debug Update Callback
+  if (m_scriptEngine) {
+    m_scriptEngine->setDebugUpdateCallback([this]() { this->onDebugUpdate(); });
+  }
+
+  // Forward SDL events to Workbench for ImGui input
+  if (m_window) {
     m_window->setEventCallback([this](const SDL_Event &event) {
       if (m_workbench) {
         m_workbench->handleInput(&event);
@@ -354,6 +362,60 @@ u64 Runtime::getSimStateHash() const {
   return hash;
 }
 
+void Runtime::onDebugUpdate() {
+  // Mini-frame used while debugger is blocking the main loop
+  // Mini-frame used while debugger is blocking the main loop
+  if (m_window) {
+    m_window->pollEvents(); // Process window events (resize, close, input)
+
+    //  while (m_isRunning) {
+    if (m_window->shouldClose()) {
+      m_isRunning = false;
+    }
+
+    // return; // FIXED: Do not return, otherwise UI is not rendered!
+  }
+
+  // Update Workbench (UI) with fake delta
+  if (m_workbench) {
+    m_workbench->update(0.016);
+  }
+
+  // Render (UI Only overlay on top of existing buffer)
+  if (m_renderDevice && m_window && !m_window->isMinimized()) {
+    // NOTE: We assume the backbuffer/canvas still holds the previous frame.
+    // We don't clear the screen because we want to see the frozen game!
+
+    // However, we need to ensure we can render Workbench on top.
+    // m_presentPass and Canvas2D are stateful.
+
+    // Let's just render Workbench.
+    // m_renderDevice->getContext()->SetRenderTargets(0, nullptr, nullptr, ...);
+    // REMOVED
+
+    // To redraw the frozen frame + UI:
+    // If we re-run PresentPass, it will redraw the Canvas2D texture to
+    // CBUF/Backbuffer. This is safe provided Canvas2D texture is valid.
+
+    // Re-run PresentPass
+    if (m_presentPass && m_canvas2d && m_canvas2d->isValid()) {
+      m_presentPass->execute(*m_renderDevice,
+                             m_canvas2d->getShaderResourceView(),
+                             m_canvas2d->getWidth(), m_canvas2d->getHeight(),
+                             render::PresentMode::Fit);
+    }
+
+    if (m_workbench) {
+      m_workbench->render(m_renderDevice.get());
+    }
+
+    m_renderDevice->present();
+  }
+
+  // Sleep to avoid burning CPU
+  SDL_Delay(10);
+}
+
 void Runtime::update(f64 dt) {
   // Skip update when paused (debugger sync)
   if (m_isPaused)
@@ -412,6 +474,8 @@ void Runtime::draw(f64 alpha) {
 // ----------------------------------------------------------------------------
 
 bool Runtime::loadCartridge(const std::string &path) {
+  m_currentCartridgePath = path;
+
   // Unload existing cartridge first to ensure clean state
   if (m_cartridge) {
     m_cartridge->unload();
@@ -431,14 +495,67 @@ bool Runtime::loadCartridge(const std::string &path) {
   m_cartridge =
       std::make_unique<runtime::Cartridge>(m_vfs.get(), m_scriptEngine.get());
 
-  // 2. Load Cartridge (handles VFS mount and script load)
+  // 2. Load Cartridge (handles VFS mount and script engine init, but NOT
+  // execution)
   if (!m_cartridge->load(path)) {
     LOG_ERROR("Runtime: Failed to load cartridge");
     return false;
   }
 
-  LOG_INFO("Runtime: Cartridge loaded successfully");
+  // Ensure screen is clear when loaded
+  if (m_canvas2d) {
+    m_canvas2d->clear(0xFF000000);
+  }
+
+  LOG_INFO("Runtime: Cartridge loaded successfully (not running yet)");
   return true;
+}
+
+bool Runtime::startCartridge() {
+  if (!m_cartridge) {
+    LOG_ERROR("Runtime: Cannot start - no cartridge loaded");
+    return false;
+  }
+
+  if (!m_cartridge->start()) {
+    LOG_ERROR("Runtime: Failed to start cartridge");
+    return false;
+  }
+
+  LOG_INFO("Runtime: Cartridge started successfully");
+  return true;
+}
+
+bool Runtime::stopCartridge() {
+  if (m_currentCartridgePath.empty()) {
+    // Just unload if no path known
+    if (m_cartridge) {
+      m_cartridge->unload();
+      m_cartridge.reset();
+      if (m_canvas2d)
+        m_canvas2d->clear(0xFF000000);
+      return true;
+    }
+    return false;
+  }
+
+  LOG_INFO("Runtime: Stopping and reloading cartridge...");
+  bool res = loadCartridge(m_currentCartridgePath);
+  return res;
+}
+
+bool Runtime::isCartridgeLoaded() const {
+  if (!m_cartridge)
+    return false;
+  auto state = m_cartridge->getState();
+  return state != runtime::CartridgeState::Unloaded &&
+         state != runtime::CartridgeState::Faulted;
+}
+
+bool Runtime::isCartridgeRunning() const {
+  if (!m_cartridge)
+    return false;
+  return m_cartridge->getState() == runtime::CartridgeState::Running;
 }
 
 } // namespace arcanee::app

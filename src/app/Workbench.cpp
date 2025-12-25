@@ -108,12 +108,28 @@ bool Workbench::initialize(render::RenderDevice *device,
     }
   });
 
-  // Preview callbacks - connect UIShell to Runtime
+  // Cartridge control callbacks - connect UIShell to Runtime
   m_uiShell->SetLoadCartridgeFn([this](const std::string &path) -> bool {
     if (m_runtime) {
       return m_runtime->loadCartridge(path);
     }
     return false;
+  });
+
+  m_uiShell->SetStartCartridgeFn([this]() -> bool {
+    fprintf(stderr, "Workbench: StartCartridgeFn called. Runtime=%p\n",
+            (void *)m_runtime);
+    if (m_runtime) {
+      return m_runtime->startCartridge();
+    }
+    return false;
+  });
+
+  m_uiShell->SetIsCartridgeLoadedFn(
+      [this]() -> bool { return m_runtime && m_runtime->isCartridgeLoaded(); });
+
+  m_uiShell->SetIsCartridgeRunningFn([this]() -> bool {
+    return m_runtime && m_runtime->isCartridgeRunning();
   });
 
   m_uiShell->SetGetPreviewTextureFn([this]() -> void * {
@@ -131,6 +147,9 @@ bool Workbench::initialize(render::RenderDevice *device,
       w = h = 0;
     }
   });
+
+  m_uiShell->SetStopCartridgeFn(
+      [this]() { return m_runtime && m_runtime->stopCartridge(); });
 
   m_uiShell->SetClearPreviewFn([this]() {
     if (m_runtime && m_runtime->getCanvas2D()) {

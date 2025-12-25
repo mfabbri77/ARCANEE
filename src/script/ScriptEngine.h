@@ -144,6 +144,12 @@ public:
       int line, const std::string &file, const std::string &reason)>;
   void setOnDebugStop(DebugStopCallback cb) { m_onDebugStop = std::move(cb); }
 
+  /**
+   * @brief Terminate execution immediately.
+   * Throws a Squirrel error to unwind the stack.
+   */
+  void terminate();
+
 private:
   HSQUIRRELVM m_vm = nullptr;
   vfs::IVfs *m_vfs = nullptr;
@@ -175,6 +181,7 @@ private:
   int m_stepStartDepth = 0;
   std::vector<DebugBreakpoint> m_breakpoints;
   DebugStopCallback m_onDebugStop;
+  bool m_terminateRequested = false;
 
   // Helper for value to string conversion
   std::string sqValueToString(HSQUIRRELVM vm, SQInteger idx);
@@ -186,6 +193,12 @@ public:
    * @param timeoutSec Timeout in seconds before execution is aborted.
    */
   void setWatchdog(bool enable, f64 timeoutSec);
+
+  using DebugUpdateCallback = std::function<void()>;
+  void setDebugUpdateCallback(DebugUpdateCallback cb) { m_onDebugUpdate = cb; }
+
+private:
+  DebugUpdateCallback m_onDebugUpdate;
 };
 
 } // namespace arcanee::script
