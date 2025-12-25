@@ -158,7 +158,7 @@ target_link_libraries(arcanee_core PRIVATE Diligent-Imgui)
 
 # ImGui Source from DiligentTools ThirdParty
 set(IMGUI_DIR "${diligenttools_SOURCE_DIR}/ThirdParty/imgui")
-target_sources(arcanee_core PRIVATE "${IMGUI_DIR}/backends/imgui_impl_sdl.cpp")
+target_sources(arcanee_core PRIVATE "${IMGUI_DIR}/backends/imgui_impl_sdl2.cpp")
 target_sources(arcanee_core PRIVATE "${IMGUI_DIR}/imgui_demo.cpp")
 target_include_directories(arcanee_core SYSTEM PUBLIC
     "${IMGUI_DIR}"

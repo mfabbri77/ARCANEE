@@ -7,7 +7,7 @@
 #include <vector>
 
 // ImGui Headers
-#include "backends/imgui_impl_sdl.h"
+#include "backends/imgui_impl_sdl2.h"
 #include "imgui.h"
 #include "misc/cpp/imgui_stdlib.h"
 #include <fstream>
@@ -68,6 +68,12 @@ bool Workbench::initialize(render::RenderDevice *device,
 
   auto SCDesc = pSwapChain->GetDesc();
 
+  // Create ImGui Context
+  ImGui::CreateContext(nullptr);
+
+  // Initialize ImGui IO
+  ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
   // Create ImGui Diligent Implementation
   // NOTE: We render ImGui directly to swapchain (no depth buffer), so we
   // must set depth format to UNKNOWN.
@@ -96,6 +102,11 @@ bool Workbench::initialize(render::RenderDevice *device,
 #ifdef ARCANEE_ENABLE_IDE
   m_mainQueue = std::make_unique<ide::MainThreadQueue>();
   m_uiShell = std::make_unique<ide::UIShell>(*m_mainQueue);
+  m_uiShell->SetRequestExitFn([this]() {
+    if (m_runtime) {
+      m_runtime->requestExit();
+    }
+  });
   LOG_INFO("Workbench: UIShell initialized");
 #endif
 

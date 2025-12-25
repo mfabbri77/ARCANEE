@@ -1,5 +1,6 @@
 #include "UIShell.h"
 #include "imgui.h"
+#include "imgui_internal.h" // Required for DockBuilder API
 #include <algorithm>
 #include <filesystem>
 #include <iostream>
@@ -69,9 +70,30 @@ void UIShell::RenderFrame() {
   // 3. Render Panes
   RenderPanes();
 
-  // 4. Render Overlays (Command Palette)
+  // 4. Render Search Pane (visibility controlled)
+  if (m_showSearch) {
+    RenderSearchPane();
+  }
+
+  // 5. Render Output/Console Panes (visibility controlled)
+  if (m_showOutput) {
+    RenderOutputPane();
+  }
+  if (m_showConsole) {
+    RenderConsolePane();
+  }
+
+  // 6. Render Preview Pane (visibility controlled)
+  if (m_showPreview) {
+    RenderPreviewPane();
+  }
+
+  // 7. Render Overlays (Command Palette, Folder Dialog)
   if (m_showCommandPalette) {
     RenderCommandPalette();
+  }
+  if (m_showFolderDialog) {
+    RenderFolderDialog();
   }
 
   // Demo window for debugging
@@ -103,24 +125,144 @@ void UIShell::RenderDockspace() {
 
 #ifdef IMGUI_HAS_DOCK
   ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
+
+  // Setup default layout on first run
+  static bool first_run = true;
+  if (first_run) {
+    first_run = false;
+    ImGui::DockBuilderRemoveNode(dockspace_id);
+    ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace);
+    ImGui::DockBuilderSetNodeSize(dockspace_id, ImGui::GetMainViewport()->Size);
+
+    // IDE Layout:
+    // +-------------------+---------------------------+----------------+
+    // | Explorer (15%)    |  Editor (55%)             | Preview (30%)  |
+    // | Search            |                           |                |
+    // +-------------------+---------------------------+----------------+
+    //                     |  Output/Console/Problems (20%)             |
+    //                     +--------------------------------------------+
+
+    // Step 1: Split left sidebar (15%)
+    ImGuiID dock_left, dock_main;
+    ImGui::DockBuilderSplitNode(dockspace_id, ImGuiDir_Left, 0.15f, &dock_left,
+                                &dock_main);
+
+    // Step 2: Split right preview pane (30% of remaining)
+    ImGuiID dock_center_area, dock_right;
+    ImGui::DockBuilderSplitNode(dock_main, ImGuiDir_Right, 0.35f, &dock_right,
+                                &dock_center_area);
+
+    // Step 3: Split bottom panel (20% of center area)
+    ImGuiID dock_center, dock_bottom;
+    ImGui::DockBuilderSplitNode(dock_center_area, ImGuiDir_Down, 0.25f,
+                                &dock_bottom, &dock_center);
+
+    // Dock windows to their positions
+    ImGui::DockBuilderDockWindow("Project Explorer", dock_left);
+    ImGui::DockBuilderDockWindow("Search", dock_left);
+    ImGui::DockBuilderDockWindow("Editor", dock_center);
+    ImGui::DockBuilderDockWindow("Preview", dock_right);
+    ImGui::DockBuilderDockWindow("Output", dock_bottom);
+    ImGui::DockBuilderDockWindow("Console", dock_bottom);
+    ImGui::DockBuilderDockWindow("Problems", dock_bottom);
+
+    ImGui::DockBuilderFinish(dockspace_id);
+  }
+
   ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
 #endif
 
   // Main Menu Bar
   if (ImGui::BeginMenuBar()) {
+    // === FILE MENU ===
     if (ImGui::BeginMenu("File")) {
-      if (ImGui::MenuItem("Open Folder...")) { /* TODO */
+      if (ImGui::MenuItem("Open Folder...", "Ctrl+O")) {
+        m_folderDialogPath = std::filesystem::current_path().string();
+        m_showFolderDialog = true;
       }
-      if (ImGui::MenuItem("Exit")) { /* TODO via Runtime */
+      ImGui::Separator();
+      if (ImGui::MenuItem("Save", "Ctrl+S")) {
+        Document *doc = m_documentSystem.GetActiveDocument();
+        if (doc)
+          m_documentSystem.SaveDocument(doc);
+      }
+      if (ImGui::MenuItem("Save All", "Ctrl+Shift+S")) {
+        // TODO: Save all open documents
+      }
+      ImGui::Separator();
+      if (ImGui::MenuItem("Exit", "Alt+F4")) {
+        if (m_requestExitFn)
+          m_requestExitFn();
       }
       ImGui::EndMenu();
     }
-    if (ImGui::BeginMenu("View")) {
+
+    // === EDIT MENU ===
+    if (ImGui::BeginMenu("Edit")) {
+      if (ImGui::MenuItem("Undo", "Ctrl+Z")) {
+        Document *doc = m_documentSystem.GetActiveDocument();
+        if (doc)
+          doc->buffer.Undo();
+      }
+      if (ImGui::MenuItem("Redo", "Ctrl+Y")) {
+        Document *doc = m_documentSystem.GetActiveDocument();
+        if (doc)
+          doc->buffer.Redo();
+      }
+      ImGui::Separator();
+      if (ImGui::MenuItem("Find in Files", "Ctrl+Shift+F")) {
+        m_showSearch = true;
+      }
       if (ImGui::MenuItem("Command Palette", "Ctrl+P")) {
         m_showCommandPalette = true;
       }
       ImGui::EndMenu();
     }
+
+    // === VIEW MENU ===
+    if (ImGui::BeginMenu("View")) {
+      ImGui::MenuItem("Explorer", nullptr, &m_showExplorer);
+      ImGui::MenuItem("Search", "Ctrl+Shift+F", &m_showSearch);
+      ImGui::MenuItem("Problems", nullptr, &m_showProblems);
+      ImGui::MenuItem("Output", nullptr, &m_showOutput);
+      ImGui::MenuItem("Console", nullptr, &m_showConsole);
+      ImGui::Separator();
+      ImGui::MenuItem("Debugger", nullptr, &m_showDebugger);
+      ImGui::MenuItem("Breakpoints", nullptr, &m_showBreakpoints);
+      ImGui::MenuItem("Local History", nullptr, &m_showLocalHistory);
+      ImGui::Separator();
+      if (ImGui::MenuItem("Command Palette", "Ctrl+P")) {
+        m_showCommandPalette = true;
+      }
+      ImGui::EndMenu();
+    }
+
+    // === RUN MENU ===
+    if (ImGui::BeginMenu("Run")) {
+      if (ImGui::MenuItem("Start Debugging", "F5")) {
+        m_showDebugger = true;
+        m_showBreakpoints = true;
+        Document *doc = m_documentSystem.GetActiveDocument();
+        if (doc)
+          m_dapClient.Launch(doc->path);
+      }
+      if (ImGui::MenuItem("Stop", "Shift+F5")) {
+        m_dapClient.Stop();
+      }
+      ImGui::Separator();
+      if (ImGui::MenuItem("Toggle Breakpoint", "F9")) {
+        Document *doc = m_documentSystem.GetActiveDocument();
+        if (doc) {
+          auto cursors = doc->buffer.GetCursors();
+          if (!cursors.empty()) {
+            int line = doc->buffer.GetLineFromOffset(cursors[0].head) + 1;
+            m_dapClient.SetBreakpoint(doc->path, line);
+          }
+        }
+      }
+      ImGui::EndMenu();
+    }
+
     ImGui::EndMenuBar();
   }
 
@@ -157,16 +299,27 @@ void DrawTree(const FileNode &node,
 }
 
 void UIShell::RenderPanes() {
-  // Project Explorer
-  if (ImGui::Begin("Project Explorer")) {
-    DrawTree(m_projectSystem.GetRoot(), [this](const std::string &path) {
-      Document *doc = nullptr;
-      m_documentSystem.OpenDocument(path, &doc);
-      if (doc)
-        m_documentSystem.SetActiveDocument(doc);
-    });
+  // Project Explorer (only shown when a project is open)
+  if (m_showExplorer && m_projectSystem.HasProject()) {
+    if (ImGui::Begin("Project Explorer")) {
+      ImGui::Text("Root: %s", m_projectSystem.GetRoot().name.c_str());
+      ImGui::Separator();
+      DrawTree(m_projectSystem.GetRoot(), [this](const std::string &path) {
+        Document *doc = nullptr;
+        m_documentSystem.OpenDocument(path, &doc);
+        if (doc)
+          m_documentSystem.SetActiveDocument(doc);
+      });
+    }
+    ImGui::End();
+  } else if (m_showExplorer) {
+    // Show placeholder when no project is open
+    if (ImGui::Begin("Project Explorer")) {
+      ImGui::TextWrapped("No folder opened.");
+      ImGui::TextWrapped("Use File > Open Folder to open a project.");
+    }
+    ImGui::End();
   }
-  ImGui::End();
 
   // Editor Pane
   if (ImGui::Begin("Editor", nullptr, ImGuiWindowFlags_None)) {
@@ -627,182 +780,192 @@ void UIShell::RenderPanes() {
 
   RenderSearchPane();
 
-  // Timeline Pane
-  if (ImGui::Begin("Local History")) {
-    Document *doc = m_documentSystem.GetActiveDocument();
-    if (doc) {
-      auto history = m_timelineStore.GetHistory(doc->path);
+  // Timeline Pane (visibility controlled)
+  if (m_showLocalHistory) {
+    if (ImGui::Begin("Local History")) {
+      Document *doc = m_documentSystem.GetActiveDocument();
+      if (doc) {
+        auto history = m_timelineStore.GetHistory(doc->path);
 
-      if (history.empty()) {
-        ImGui::Text("No history for this file.");
+        if (history.empty()) {
+          ImGui::Text("No history for this file.");
+        } else {
+          ImGui::Text("%zu snapshots", history.size());
+          ImGui::Separator();
+
+          for (const auto &entry : history) {
+            // Format timestamp
+            char timeBuf[64];
+            std::time_t t = (std::time_t)entry.timestamp;
+            std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S",
+                          std::localtime(&t));
+
+            std::string label = std::string(timeBuf) + " [" + entry.trigger +
+                                "] (" + std::to_string(entry.originalSize) +
+                                " bytes)";
+            if (ImGui::Selectable(label.c_str())) {
+              // Restore snapshot
+              std::string content = m_timelineStore.RestoreSnapshot(entry.id);
+              if (!content.empty()) {
+                doc->buffer.Load(content);
+                doc->dirty = true;
+              }
+            }
+          }
+        }
       } else {
-        ImGui::Text("%zu snapshots", history.size());
+        ImGui::Text("No document open.");
+      }
+    }
+    ImGui::End();
+  }
+
+  // Debugger Control Bar (visibility controlled)
+  if (m_showDebugger) {
+    if (ImGui::Begin("Debugger")) {
+      DebugState state = m_dapClient.GetState();
+
+      if (state == DebugState::Disconnected) {
+        Document *doc = m_documentSystem.GetActiveDocument();
+        if (doc && ImGui::Button("Launch Debug")) {
+          m_dapClient.Launch(doc->path);
+        }
+      } else if (state == DebugState::Stopped) {
+        if (ImGui::Button("Continue"))
+          m_dapClient.Continue();
+        ImGui::SameLine();
+        if (ImGui::Button("Step In"))
+          m_dapClient.StepIn();
+        ImGui::SameLine();
+        if (ImGui::Button("Step Over"))
+          m_dapClient.StepOver();
+        ImGui::SameLine();
+        if (ImGui::Button("Step Out"))
+          m_dapClient.StepOut();
+        ImGui::SameLine();
+        if (ImGui::Button("Stop"))
+          m_dapClient.Stop();
+      } else if (state == DebugState::Running) {
+        if (ImGui::Button("Pause"))
+          m_dapClient.Pause();
+        ImGui::SameLine();
+        if (ImGui::Button("Stop"))
+          m_dapClient.Stop();
+      } else {
+        if (ImGui::Button("Disconnect"))
+          m_dapClient.Disconnect();
+      }
+
+      ImGui::Separator();
+
+      // Call Stack
+      ImGui::Text("Call Stack:");
+      auto stack = m_dapClient.GetCallStack();
+      for (const auto &frame : stack) {
+        std::string label =
+            frame.name + " (" + std::to_string(frame.line) + ")";
+        if (ImGui::Selectable(label.c_str())) {
+          // Navigate to frame location
+          Document *doc = nullptr;
+          if (m_documentSystem.OpenDocument(frame.file, &doc).ok()) {
+            m_documentSystem.SetActiveDocument(doc);
+            doc->buffer.SetCursor(doc->buffer.GetLineStart(frame.line - 1));
+          }
+        }
+      }
+
+      ImGui::Separator();
+
+      // Variables
+      ImGui::Text("Locals:");
+      auto locals = m_dapClient.GetLocals(0);
+      for (const auto &var : locals) {
+        ImGui::Text("  %s = %s", var.name.c_str(), var.value.c_str());
+      }
+    }
+    ImGui::End();
+  }
+
+  // Breakpoints pane (visibility controlled)
+  if (m_showBreakpoints) {
+    if (ImGui::Begin("Breakpoints")) {
+      auto breakpoints = m_dapClient.GetBreakpoints();
+      for (const auto &bp : breakpoints) {
+        std::string label = std::filesystem::path(bp.file).filename().string() +
+                            ":" + std::to_string(bp.line);
+        bool enabled = bp.enabled;
+        if (ImGui::Checkbox(("##bp" + std::to_string(bp.id)).c_str(),
+                            &enabled)) {
+          m_dapClient.ToggleBreakpoint(bp.file, bp.line);
+        }
+        ImGui::SameLine();
+        ImGui::Text("%s", label.c_str());
+      }
+
+      // Add breakpoint via current line
+      Document *doc = m_documentSystem.GetActiveDocument();
+      if (doc && ImGui::Button("Add at Cursor")) {
+        auto cursors = doc->buffer.GetCursors();
+        if (!cursors.empty()) {
+          int line = doc->buffer.GetLineFromOffset(cursors[0].head) + 1;
+          m_dapClient.SetBreakpoint(doc->path, line);
+        }
+      }
+    }
+    ImGui::End();
+  }
+
+  // Problems pane (visibility controlled)
+  if (m_showProblems) {
+    if (ImGui::Begin("Problems")) {
+      auto diagnostics = m_lspClient.GetDiagnostics();
+
+      if (diagnostics.empty()) {
+        ImGui::Text("No problems");
+      } else {
+        ImGui::Text("%zu issues", diagnostics.size());
         ImGui::Separator();
 
-        for (const auto &entry : history) {
-          // Format timestamp
-          char timeBuf[64];
-          std::time_t t = (std::time_t)entry.timestamp;
-          std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M:%S",
-                        std::localtime(&t));
+        for (const auto &diag : diagnostics) {
+          ImVec4 color;
+          const char *icon;
+          switch (diag.severity) {
+          case DiagnosticSeverity::Error:
+            color = ImVec4(1, 0.3f, 0.3f, 1);
+            icon = "[E]";
+            break;
+          case DiagnosticSeverity::Warning:
+            color = ImVec4(1, 1, 0.3f, 1);
+            icon = "[W]";
+            break;
+          case DiagnosticSeverity::Information:
+            color = ImVec4(0.3f, 0.7f, 1, 1);
+            icon = "[I]";
+            break;
+          default:
+            color = ImVec4(0.7f, 0.7f, 0.7f, 1);
+            icon = "[H]";
+            break;
+          }
 
-          std::string label = std::string(timeBuf) + " [" + entry.trigger +
-                              "] (" + std::to_string(entry.originalSize) +
-                              " bytes)";
-          if (ImGui::Selectable(label.c_str())) {
-            // Restore snapshot
-            std::string content = m_timelineStore.RestoreSnapshot(entry.id);
-            if (!content.empty()) {
-              doc->buffer.Load(content);
-              doc->dirty = true;
+          std::string label =
+              std::string(icon) + " " +
+              std::filesystem::path(diag.file).filename().string() + ":" +
+              std::to_string(diag.line) + " - " + diag.message;
+
+          ImGui::TextColored(color, "%s", label.c_str());
+          if (ImGui::IsItemClicked()) {
+            Document *doc = nullptr;
+            if (m_documentSystem.OpenDocument(diag.file, &doc).ok()) {
+              m_documentSystem.SetActiveDocument(doc);
+              doc->buffer.SetCursor(doc->buffer.GetLineStart(diag.line - 1));
             }
           }
         }
       }
-    } else {
-      ImGui::Text("No document open.");
     }
+    ImGui::End();
   }
-  ImGui::End();
-
-  // Debugger Control Bar
-  if (ImGui::Begin("Debugger")) {
-    DebugState state = m_dapClient.GetState();
-
-    if (state == DebugState::Disconnected) {
-      Document *doc = m_documentSystem.GetActiveDocument();
-      if (doc && ImGui::Button("Launch Debug")) {
-        m_dapClient.Launch(doc->path);
-      }
-    } else if (state == DebugState::Stopped) {
-      if (ImGui::Button("Continue"))
-        m_dapClient.Continue();
-      ImGui::SameLine();
-      if (ImGui::Button("Step In"))
-        m_dapClient.StepIn();
-      ImGui::SameLine();
-      if (ImGui::Button("Step Over"))
-        m_dapClient.StepOver();
-      ImGui::SameLine();
-      if (ImGui::Button("Step Out"))
-        m_dapClient.StepOut();
-      ImGui::SameLine();
-      if (ImGui::Button("Stop"))
-        m_dapClient.Stop();
-    } else if (state == DebugState::Running) {
-      if (ImGui::Button("Pause"))
-        m_dapClient.Pause();
-      ImGui::SameLine();
-      if (ImGui::Button("Stop"))
-        m_dapClient.Stop();
-    } else {
-      if (ImGui::Button("Disconnect"))
-        m_dapClient.Disconnect();
-    }
-
-    ImGui::Separator();
-
-    // Call Stack
-    ImGui::Text("Call Stack:");
-    auto stack = m_dapClient.GetCallStack();
-    for (const auto &frame : stack) {
-      std::string label = frame.name + " (" + std::to_string(frame.line) + ")";
-      if (ImGui::Selectable(label.c_str())) {
-        // Navigate to frame location
-        Document *doc = nullptr;
-        if (m_documentSystem.OpenDocument(frame.file, &doc).ok()) {
-          m_documentSystem.SetActiveDocument(doc);
-          doc->buffer.SetCursor(doc->buffer.GetLineStart(frame.line - 1));
-        }
-      }
-    }
-
-    ImGui::Separator();
-
-    // Variables
-    ImGui::Text("Locals:");
-    auto locals = m_dapClient.GetLocals(0);
-    for (const auto &var : locals) {
-      ImGui::Text("  %s = %s", var.name.c_str(), var.value.c_str());
-    }
-  }
-  ImGui::End();
-
-  // Breakpoints pane
-  if (ImGui::Begin("Breakpoints")) {
-    auto breakpoints = m_dapClient.GetBreakpoints();
-    for (const auto &bp : breakpoints) {
-      std::string label = std::filesystem::path(bp.file).filename().string() +
-                          ":" + std::to_string(bp.line);
-      bool enabled = bp.enabled;
-      if (ImGui::Checkbox(("##bp" + std::to_string(bp.id)).c_str(), &enabled)) {
-        m_dapClient.ToggleBreakpoint(bp.file, bp.line);
-      }
-      ImGui::SameLine();
-      ImGui::Text("%s", label.c_str());
-    }
-
-    // Add breakpoint via current line
-    Document *doc = m_documentSystem.GetActiveDocument();
-    if (doc && ImGui::Button("Add at Cursor")) {
-      auto cursors = doc->buffer.GetCursors();
-      if (!cursors.empty()) {
-        int line = doc->buffer.GetLineFromOffset(cursors[0].head) + 1;
-        m_dapClient.SetBreakpoint(doc->path, line);
-      }
-    }
-  }
-  ImGui::End();
-
-  // Problems pane
-  if (ImGui::Begin("Problems")) {
-    auto diagnostics = m_lspClient.GetDiagnostics();
-
-    if (diagnostics.empty()) {
-      ImGui::Text("No problems");
-    } else {
-      ImGui::Text("%zu issues", diagnostics.size());
-      ImGui::Separator();
-
-      for (const auto &diag : diagnostics) {
-        ImVec4 color;
-        const char *icon;
-        switch (diag.severity) {
-        case DiagnosticSeverity::Error:
-          color = ImVec4(1, 0.3f, 0.3f, 1);
-          icon = "[E]";
-          break;
-        case DiagnosticSeverity::Warning:
-          color = ImVec4(1, 1, 0.3f, 1);
-          icon = "[W]";
-          break;
-        case DiagnosticSeverity::Information:
-          color = ImVec4(0.3f, 0.7f, 1, 1);
-          icon = "[I]";
-          break;
-        default:
-          color = ImVec4(0.7f, 0.7f, 0.7f, 1);
-          icon = "[H]";
-          break;
-        }
-
-        std::string label =
-            std::string(icon) + " " +
-            std::filesystem::path(diag.file).filename().string() + ":" +
-            std::to_string(diag.line) + " - " + diag.message;
-
-        ImGui::TextColored(color, "%s", label.c_str());
-        if (ImGui::IsItemClicked()) {
-          Document *doc = nullptr;
-          if (m_documentSystem.OpenDocument(diag.file, &doc).ok()) {
-            m_documentSystem.SetActiveDocument(doc);
-            doc->buffer.SetCursor(doc->buffer.GetLineStart(diag.line - 1));
-          }
-        }
-      }
-    }
-  }
-  ImGui::End();
 }
 
 void UIShell::RenderCommandPalette() {
@@ -833,7 +996,7 @@ void UIShell::RenderCommandPalette() {
     }
     ImGui::EndChild();
 
-    if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Escape))) {
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
       m_showCommandPalette = false;
       ImGui::CloseCurrentPopup();
     }
@@ -913,6 +1076,99 @@ void UIShell::RenderSearchPane() {
     }
   }
   ImGui::End();
+}
+
+void UIShell::RenderOutputPane() {
+  if (ImGui::Begin("Output")) {
+    ImGui::TextWrapped("Build output and logs will appear here.");
+    // TODO: Connect to build system output
+  }
+  ImGui::End();
+}
+
+void UIShell::RenderConsolePane() {
+  if (ImGui::Begin("Console")) {
+    ImGui::TextWrapped("Debug console - script output and REPL.");
+    // TODO: Connect to script engine console
+  }
+  ImGui::End();
+}
+
+void UIShell::RenderPreviewPane() {
+  if (ImGui::Begin("Preview")) {
+    ImGui::TextWrapped("Game preview will appear here.");
+    // TODO: Render game viewport texture
+    ImGui::Text("Resolution: 256x240");
+    ImGui::Text("FPS: 60");
+  }
+  ImGui::End();
+}
+
+void UIShell::RenderFolderDialog() {
+  ImGui::OpenPopup("Open Folder");
+
+  ImGuiViewport *viewport = ImGui::GetMainViewport();
+  ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Appearing,
+                          ImVec2(0.5f, 0.5f));
+  ImGui::SetNextWindowSize(ImVec2(600, 400));
+
+  if (ImGui::BeginPopupModal("Open Folder", &m_showFolderDialog,
+                             ImGuiWindowFlags_NoResize)) {
+    ImGui::Text("Current Path:");
+    ImGui::TextWrapped("%s", m_folderDialogPath.c_str());
+    ImGui::Separator();
+
+    // Parent directory button
+    if (ImGui::Button("..")) {
+      std::filesystem::path p(m_folderDialogPath);
+      if (p.has_parent_path()) {
+        m_folderDialogPath = p.parent_path().string();
+      }
+    }
+    ImGui::SameLine();
+    ImGui::Text("(Parent Folder)");
+
+    ImGui::Separator();
+
+    // List directories
+    ImGui::BeginChild("DirectoryList", ImVec2(0, -50), true);
+    try {
+      for (const auto &entry :
+           std::filesystem::directory_iterator(m_folderDialogPath)) {
+        if (entry.is_directory()) {
+          std::string name = entry.path().filename().string();
+          // Skip hidden directories
+          if (!name.empty() && name[0] != '.') {
+            if (ImGui::Selectable(name.c_str(), false,
+                                  ImGuiSelectableFlags_AllowDoubleClick)) {
+              if (ImGui::IsMouseDoubleClicked(0)) {
+                m_folderDialogPath = entry.path().string();
+              }
+            }
+          }
+        }
+      }
+    } catch (...) {
+      ImGui::TextColored(ImVec4(1, 0.3f, 0.3f, 1), "Cannot read directory");
+    }
+    ImGui::EndChild();
+
+    ImGui::Separator();
+
+    // Action buttons
+    if (ImGui::Button("Open", ImVec2(100, 0))) {
+      m_projectSystem.OpenRoot(m_folderDialogPath);
+      m_showFolderDialog = false;
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel", ImVec2(100, 0))) {
+      m_showFolderDialog = false;
+      ImGui::CloseCurrentPopup();
+    }
+
+    ImGui::EndPopup();
+  }
 }
 
 } // namespace arcanee::ide

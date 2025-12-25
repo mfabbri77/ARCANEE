@@ -65,12 +65,25 @@ private:
   void RenderPanes();
   void RenderSearchPane();
   void RenderCommandPalette();
+  void RenderOutputPane();
+  void RenderConsolePane();
+  void RenderPreviewPane();
+  void RenderFolderDialog();
 
   MainThreadQueue &m_queue;
 
   // State
   bool m_showCommandPalette = false;
+  bool m_showFolderDialog = false;
+  std::string m_folderDialogPath;
+  std::function<void()> m_requestExitFn;
 
+public:
+  void SetRequestExitFn(std::function<void()> fn) {
+    m_requestExitFn = std::move(fn);
+  }
+
+private:
   // Persistence
   void LoadLayout();
   void SaveLayout();
@@ -85,6 +98,18 @@ private:
   std::string m_searchQuery;
   bool m_searchCaseSensitive = false;
   bool m_searchRegex = false;
+
+  // Pane Visibility (Code View defaults - hide debug panes)
+  bool m_showExplorer = true;
+  bool m_showEditor = true;  // Always visible
+  bool m_showSearch = false; // Toggle with Ctrl+Shift+F
+  bool m_showOutput = true;
+  bool m_showConsole = false;
+  bool m_showProblems = true;
+  bool m_showDebugger = false;    // Debug view only
+  bool m_showBreakpoints = false; // Debug view only
+  bool m_showLocalHistory = false;
+  bool m_showPreview = true; // Preview pane on right
 
   TaskRunner m_taskRunner;
   int m_selectedTaskIndex = -1;

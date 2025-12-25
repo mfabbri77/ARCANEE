@@ -29,6 +29,7 @@ public:
 
   const FileNode &GetRoot() const { return m_root; }
   const std::string &GetRootPath() const { return m_rootPath; }
+  bool HasProject() const { return !m_rootPath.empty(); }
 
 private:
   std::string m_rootPath;
