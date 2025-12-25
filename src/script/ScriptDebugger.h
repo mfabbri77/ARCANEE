@@ -10,7 +10,7 @@ namespace arcanee::script {
 class ScriptEngine;
 
 // Debug action for stepping
-enum class DebugAction { None, StepIn, StepOver, StepOut, Continue };
+enum class DebugAction { None, StepIn, StepOver, StepOut, Continue, Pause };
 
 class ScriptDebugger {
 public:

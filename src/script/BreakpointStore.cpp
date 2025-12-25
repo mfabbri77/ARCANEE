@@ -10,7 +10,7 @@ void BreakpointStore::add(const std::string &file, int line) {
 
   m_lookup[file].insert(line);
   m_linear.push_back({file, line, true});
-  LOG_INFO("Breakpoint added: %s:%d", file.c_str(), line);
+  LOG_INFO("Breakpoint added: %s:%d [Store=%p]", file.c_str(), line, this);
 }
 
 void BreakpointStore::remove(const std::string &file, int line) {
@@ -39,8 +39,34 @@ bool BreakpointStore::hasBreakpoint(const std::string &file, int line) const {
   // 1. Exact Match (Fast)
   auto it = m_lookup.find(file);
   if (it != m_lookup.end()) {
-    if (it->second.count(line) > 0)
+    if (it->second.count(line) > 0) {
+      LOG_INFO("Breakpoint HIT: %s:%d", file.c_str(), line);
       return true;
+    } else {
+      LOG_INFO("Breakpoint MISS: %s found, but line %d not in set",
+               file.c_str(), line);
+      return false;
+    }
+  } else {
+    LOG_INFO("Breakpoint MISS: File '%s' not in lookup. Available keys:",
+             file.c_str());
+    // For debugging tricky paths, uncomment the following to print incoming
+    // filename in hex std::string hex_file; for (char c : file) {
+    //     char buf[4];
+    //     snprintf(buf, sizeof(buf), "%02x", (unsigned char)c);
+    //     hex_file += buf;
+    // }
+    // LOG_INFO("  Incoming file (hex): %s", hex_file.c_str());
+    for (const auto &kv : m_lookup) {
+      LOG_INFO("  - '%s'", kv.first.c_str());
+      // For debugging tricky paths, uncomment the following to print stored
+      // filename in hex std::string hex_stored_file; for (char c : kv.first) {
+      //     char buf[4];
+      //     snprintf(buf, sizeof(buf), "%02x", (unsigned char)c);
+      //     hex_stored_file += buf;
+      // }
+      // LOG_INFO("    (hex): %s", hex_stored_file.c_str());
+    }
   }
 
   // 2. Linear Scan Fallback (Robust VFS/Absolute matching)

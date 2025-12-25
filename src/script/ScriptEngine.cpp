@@ -147,8 +147,25 @@ bool ScriptEngine::initialize(vfs::IVfs *vfs, ScriptConfig config) {
   // Re-attach debug hook if debugging was enabled (persisted across reloads)
   // Attach debugger if configured
   m_debugger->attach(m_vm);
-  if (config.debugInfo) {
-    m_debugger->setEnabled(true);
+
+  // instead of legare l'enable a debugInfo, lega a "modalità debug attiva"
+  if (m_debugger->isEnabled()) {
+    m_debugger->setEnabled(true); // reinstall hook sul nuovo vm
+  } else if (config.debugInfo) {
+    // Logic kept: if config mandates it (e.g. first load), set enabled?
+    // Actually friend says "invece di legare l'enable a debugInfo"
+    // But we might want initial state. Let's keep existing logic as fallback or
+    // just use m_debugger->isEnabled() if it was already set. But wait,
+    // m_debugger persists across initialize() because it is a member of
+    // ScriptEngine. So checking isEnabled() is correct. However, if it's the
+    // *first* time, isEnabled is false. DapClient calls setDebugEnabled(true).
+    // So if we reload, isEnabled is true.
+    // What about config.debugInfo? It enables compile-time debug info.
+    // It was: if (config.debugInfo) m_debugger->setEnabled(true);
+    // We should probably respect config.debugInfo for the *initial* enablement
+    // if it's meant to force it. But typically DebugInfo is just for
+    // compilation. Hook enablement is separate. Let's rely on
+    // m_debugger->isEnabled().
   }
 
   LOG_INFO("Squirrel VM initialized");
@@ -204,6 +221,11 @@ void ScriptEngine::setDebugEnabled(bool enable) {
 
 bool ScriptEngine::isDebugEnabled() const {
   return m_debugger && m_debugger->isEnabled();
+}
+
+void ScriptEngine::setOnDebugStop(DebugStopCallback cb) {
+  if (m_debugger)
+    m_debugger->setStopCallback(std::move(cb));
 }
 
 void ScriptEngine::setDebugAction(DebugAction action) {

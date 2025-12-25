@@ -57,13 +57,31 @@ void DapClient::SetScriptEngine(script::ScriptEngine *engine) {
         }
         if (!m_callStack.empty()) {
           // Ensure we point to the right file for the editor
-          m_currentScript = m_callStack[0].file;
+          // Stack file is VFS (from engine). We need Host path for Editor?
+          // Editor expects Host Path for opening docs.
+          // m_callStack file comes from engine, so it is VFS likely 'cart:/...'
+          // We should store Host Path in m_callStack if UI expects it?
+          // DapClient::GetCallStack() returns m_callStack.
+          // UIShell uses it.
+          // Let's convert in GetCallStack or here?
+          // Let's convert here for simple cache.
+          // Wait, 'frame.file' is from engine callstack.
+          // We should convert it to Host Path.
+          // But wait, user said "DapClient salva VFS... E per la UI/Editor...
+          // converti indietro". So let's convert here:
+          m_currentScript = ToHostPath(m_callStack[0].file);
         }
       }
 
       if (m_onOutput) {
         m_onOutput("console", "[DAP] Stopped at " + file + ":" +
                                   std::to_string(line) + " (" + reason + ")");
+      }
+
+      // Notify UI (Trigger Pause)
+      // Pass HOST path to callback
+      if (m_onStopped) {
+        m_onStopped(reason, line, ToHostPath(file));
       }
     });
   }
@@ -253,22 +271,24 @@ void DapClient::Stop() {
 
 void DapClient::SetBreakpoint(const std::string &file, int line) {
   std::lock_guard<std::mutex> lock(m_mutex);
-  fprintf(stderr, "DapClient::SetBreakpoint %s:%d\n", file.c_str(), line);
+  std::string vfsPath = ToVfsPath(file);
+  fprintf(stderr, "DapClient::SetBreakpoint Host=%s VFS=%s:%d\n", file.c_str(),
+          vfsPath.c_str(), line);
 
-  // Check if already exists
+  // Check if already exists (Compare VFS path)
   for (auto &bp : m_breakpoints) {
-    if (bp.file == file && bp.line == line) {
+    if (bp.file == vfsPath && bp.line == line) {
       bp.enabled = true;
-      // Sync to ScriptEngine
+      // Sync to ScriptEngine (It expects VFS path)
       if (m_scriptEngine) {
-        m_scriptEngine->addBreakpoint(ToVfsPath(file), line);
+        m_scriptEngine->addBreakpoint(vfsPath, line);
       }
       return;
     }
   }
 
   BreakpointInfo bp;
-  bp.file = file;
+  bp.file = vfsPath; // STORE VFS PATH
   bp.line = line;
   bp.enabled = true;
   bp.id = m_nextBreakpointId++;
@@ -276,7 +296,7 @@ void DapClient::SetBreakpoint(const std::string &file, int line) {
 
   // Sync to ScriptEngine
   if (m_scriptEngine) {
-    m_scriptEngine->addBreakpoint(ToVfsPath(file), line);
+    m_scriptEngine->addBreakpoint(vfsPath, line);
   } else {
     fprintf(stderr, "DapClient: ScriptEngine is NULL, stored BP locally.\n");
   }
@@ -284,31 +304,34 @@ void DapClient::SetBreakpoint(const std::string &file, int line) {
 
 void DapClient::RemoveBreakpoint(const std::string &file, int line) {
   std::lock_guard<std::mutex> lock(m_mutex);
-  fprintf(stderr, "DapClient::RemoveBreakpoint %s:%d\n", file.c_str(), line);
+  std::string vfsPath = ToVfsPath(file);
+  fprintf(stderr, "DapClient::RemoveBreakpoint Host=%s VFS=%s:%d\n",
+          file.c_str(), vfsPath.c_str(), line);
 
-  // Remove from local list
+  // Remove from local list (Compare VFS path)
   m_breakpoints.erase(std::remove_if(m_breakpoints.begin(), m_breakpoints.end(),
                                      [&](const BreakpointInfo &bp) {
-                                       return bp.file == file &&
+                                       return bp.file == vfsPath &&
                                               bp.line == line;
                                      }),
                       m_breakpoints.end());
 
   // Sync to ScriptEngine
   if (m_scriptEngine) {
-    m_scriptEngine->removeBreakpoint(ToVfsPath(file), line);
+    m_scriptEngine->removeBreakpoint(vfsPath, line);
   }
 }
 
 void DapClient::ToggleBreakpoint(const std::string &file, int line) {
   std::lock_guard<std::mutex> lock(m_mutex);
+  std::string vfsPath = ToVfsPath(file);
 
   // Check if exists - if so, remove it
   for (auto it = m_breakpoints.begin(); it != m_breakpoints.end(); ++it) {
-    if (it->file == file && it->line == line) {
+    if (it->file == vfsPath && it->line == line) {
       m_breakpoints.erase(it);
       if (m_scriptEngine) {
-        m_scriptEngine->removeBreakpoint(ToVfsPath(file), line);
+        m_scriptEngine->removeBreakpoint(vfsPath, line);
       }
       return;
     }
@@ -316,20 +339,37 @@ void DapClient::ToggleBreakpoint(const std::string &file, int line) {
 
   // Not found, add it
   BreakpointInfo bp;
-  bp.file = file;
+  bp.file = vfsPath; // STORE VFS PATH
   bp.line = line;
   bp.enabled = true;
   bp.id = m_nextBreakpointId++;
   m_breakpoints.push_back(bp);
 
   if (m_scriptEngine) {
-    m_scriptEngine->addBreakpoint(ToVfsPath(file), line);
+    m_scriptEngine->addBreakpoint(vfsPath, line);
   }
 }
 
 std::vector<BreakpointInfo> DapClient::GetBreakpoints() const {
   std::lock_guard<std::mutex> lock(m_mutex);
-  return m_breakpoints;
+  // Return HOST paths for UI
+  std::vector<BreakpointInfo> result;
+  result.reserve(m_breakpoints.size());
+  for (const auto &bp : m_breakpoints) {
+    BreakpointInfo hostBp = bp;
+    // const_cast because ToHostPath isn't const? It should be.
+    // DapClient::ToHostPath is a member func.
+    // But we are in a const function. ToHostPath must be const!
+    // Oops, in the viewed file ToHostPath(const std::string&) has no const
+    // qualifier on method. I can't call it easily without const_cast on 'this'
+    // or making it static/const. I'll assume I can just use
+    // const_cast<DapClient*>(this)->ToHostPath or fix ToHostPath signature.
+    // Let's use const_cast for minimal impact now, or duplicate logic.
+    // Or better: ToHostPath doesn't modify state.
+    hostBp.file = const_cast<DapClient *>(this)->ToHostPath(bp.file);
+    result.push_back(hostBp);
+  }
+  return result;
 }
 
 std::vector<StackFrame> DapClient::GetCallStack() {

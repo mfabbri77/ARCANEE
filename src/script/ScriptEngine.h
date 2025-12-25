@@ -116,7 +116,7 @@ public:
   /**
    * @brief Check if VM is paused at breakpoint/step.
    */
-  bool isPaused() const { return m_debugPaused; }
+  bool isPaused() const { return m_debugger ? m_debugger->isPaused() : false; }
 
   /**
    * @brief Set debug action (called by DapClient).
@@ -141,6 +141,9 @@ public:
    * @brief Callback when debugger stops (breakpoint or step).
    * Called with line number and source file.
    */
+  using DebugStopCallback = ScriptDebugger::StopCallback;
+  void setOnDebugStop(DebugStopCallback cb);
+
   /**
    * @brief Terminate execution immediately.
    */

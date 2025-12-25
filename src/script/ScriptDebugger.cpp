@@ -71,6 +71,13 @@ void ScriptDebugger::debugHook(HSQUIRRELVM v, SQInteger type,
 void ScriptDebugger::onHook(HSQUIRRELVM v, SQInteger type,
                             const std::string &file, int line,
                             const std::string &func) {
+  // Throttled logging for diagnostics
+  static int once = 0;
+  if (once++ < 50) {
+    LOG_INFO("HOOK type=%d ('%c') file=%s line=%d [Debugger=%p]", (int)type,
+             (char)type, file.c_str(), line, this);
+  }
+
   // Watchdog Check
   if (m_engine && m_engine->m_watchdogEnabled) {
     // Only check occasionally or on every line?
@@ -91,13 +98,19 @@ void ScriptDebugger::onHook(HSQUIRRELVM v, SQInteger type,
   }
 
   // Only check breakpoints/stepping on line events
-  if (type != 'l')
+  if (type != 'l') {
+    // LOG_INFO("Skipping non-line event type=%d", (int)type);
     return;
+  }
+
+  LOG_INFO("Processing Line Event: %s:%d (Action=%d)", file.c_str(), line,
+           (int)m_action);
 
   bool shouldStop = false;
   std::string reason;
 
   // 1. Check Breakpoints
+  LOG_INFO("Checking breakpoints for %s:%d", file.c_str(), line);
   if (m_breakpoints.hasBreakpoint(file, line)) {
     shouldStop = true;
     reason = "breakpoint";
@@ -105,6 +118,7 @@ void ScriptDebugger::onHook(HSQUIRRELVM v, SQInteger type,
 
   // 2. Check Stepping
   if (!shouldStop && m_action != DebugAction::None) {
+    LOG_INFO("Checking Action %d", (int)m_action);
     switch (m_action) {
     case DebugAction::StepIn:
       shouldStop = true;
@@ -123,6 +137,10 @@ void ScriptDebugger::onHook(HSQUIRRELVM v, SQInteger type,
         reason = "step";
       }
       break;
+    case DebugAction::Pause:
+      shouldStop = true;
+      reason = "pause";
+      break;
     default:
       break;
     }
@@ -134,6 +152,12 @@ void ScriptDebugger::onHook(HSQUIRRELVM v, SQInteger type,
 
     LOG_INFO("Debugger: Paused at %s:%d (%s). Depth=%d", file.c_str(), line,
              reason.c_str(), m_currentDepth);
+
+    // Ensure we clear the Pause action so we don't get stuck in a loop if we
+    // resume
+    if (m_action == DebugAction::Pause) {
+      m_action = DebugAction::None;
+    }
 
     if (m_onStop) {
       m_onStop(line, file, reason);

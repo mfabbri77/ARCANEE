@@ -98,6 +98,13 @@ void UIShell::RenderFrame() {
             m_dapClient.SetScriptEngine(m_getScriptEngineFn());
           }
 
+          // Register Stop Callback to pause runtime
+          m_dapClient.SetOnStopped(
+              [this](const std::string &, int, const std::string &) {
+                if (m_pauseRuntimeFn)
+                  m_pauseRuntimeFn();
+              });
+
           Document *doc = m_documentSystem.GetActiveDocument();
           std::string launchPath = doc ? doc->path : "";
           m_dapClient.Launch(launchPath);

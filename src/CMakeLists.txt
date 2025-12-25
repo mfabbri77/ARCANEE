@@ -37,6 +37,10 @@ set(SCRIPT_SOURCES
     script/BindingHelpers.h
     script/BindingHelpers.cpp
     script/ScriptEngine.cpp
+    script/ScriptDebugger.cpp
+    script/ScriptDebugger.h
+    script/BreakpointStore.cpp
+    script/BreakpointStore.h
     script/api/SysBinding.cpp
     script/api/FsBinding.cpp
     script/api/GfxBinding.cpp
