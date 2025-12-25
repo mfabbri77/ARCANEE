@@ -12,25 +12,22 @@
  * @file ScriptEngine.h
  */
 
+#include "ScriptDebugger.h" // Added
 #include "common/Types.h"
 #include "vfs/Vfs.h"
 #include <functional>
+#include <memory>
 #include <squirrel.h>
+
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 namespace arcanee::script {
 
-// Debug action for stepping
-enum class DebugAction { None, StepIn, StepOver, StepOut, Continue };
+// DebugAction defined in ScriptDebugger.h
 
-// Breakpoint info
-struct DebugBreakpoint {
-  std::string file; // VFS path or sourcename
-  int line;
-  bool enabled = true;
-};
+// DebugBreakpoint defined in BreakpointStore.h
 
 // Local variable for inspection
 struct LocalVar {
@@ -53,6 +50,7 @@ struct StackFrame {
 class ScriptEngine {
 public:
   friend class ScopedWatchdog; // Allow ScopedWatchdog to access private members
+  friend class ScriptDebugger; // Allow ScriptDebugger to access private members
   ScriptEngine();
   ~ScriptEngine();
 
@@ -108,7 +106,12 @@ public:
    * @brief Enable/disable debugging mode.
    */
   void setDebugEnabled(bool enable);
-  bool isDebugEnabled() const { return m_debugEnabled; }
+  bool isDebugEnabled() const;
+
+  /**
+   * @brief Access the debugger instance.
+   */
+  ScriptDebugger *getDebugger() const { return m_debugger.get(); }
 
   /**
    * @brief Check if VM is paused at breakpoint/step.
@@ -126,9 +129,7 @@ public:
   void addBreakpoint(const std::string &file, int line);
   void removeBreakpoint(const std::string &file, int line);
   void clearBreakpoints();
-  const std::vector<DebugBreakpoint> &getBreakpoints() const {
-    return m_breakpoints;
-  }
+  const std::vector<DebugBreakpoint> &getBreakpoints() const;
 
   /**
    * @brief Inspection (call when paused).
@@ -140,13 +141,8 @@ public:
    * @brief Callback when debugger stops (breakpoint or step).
    * Called with line number and source file.
    */
-  using DebugStopCallback = std::function<void(
-      int line, const std::string &file, const std::string &reason)>;
-  void setOnDebugStop(DebugStopCallback cb) { m_onDebugStop = std::move(cb); }
-
   /**
    * @brief Terminate execution immediately.
-   * Throws a Squirrel error to unwind the stack.
    */
   void terminate();
 
@@ -175,12 +171,7 @@ private:
   f64 m_executionStartTime = 0.0;
 
   // Debugger state
-  bool m_debugEnabled = false;
-  bool m_debugPaused = false;
-  DebugAction m_debugAction = DebugAction::None;
-  int m_stepStartDepth = 0;
-  std::vector<DebugBreakpoint> m_breakpoints;
-  DebugStopCallback m_onDebugStop;
+  std::unique_ptr<ScriptDebugger> m_debugger;
   bool m_terminateRequested = false;
 
   // Helper for value to string conversion

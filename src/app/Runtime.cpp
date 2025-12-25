@@ -277,6 +277,11 @@ int Runtime::run() {
       break;
     }
 
+    // Handle scheduled cartridge start (Safe Point)
+    if (m_pendingStart) {
+      startCartridge();
+    }
+
     // Benchmark Check
     if (m_isBenchmark) {
       frames++;
@@ -511,11 +516,19 @@ bool Runtime::loadCartridge(const std::string &path) {
   return true;
 }
 
+void Runtime::scheduleStartCartridge() {
+  m_pendingStart = true;
+  LOG_INFO("Runtime: Cartridge start scheduled");
+}
+
 bool Runtime::startCartridge() {
   if (!m_cartridge) {
     LOG_ERROR("Runtime: Cannot start - no cartridge loaded");
     return false;
   }
+
+  // Clear pending flag just in case
+  m_pendingStart = false;
 
   if (!m_cartridge->start()) {
     LOG_ERROR("Runtime: Failed to start cartridge");

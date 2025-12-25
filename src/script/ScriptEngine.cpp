@@ -92,176 +92,11 @@ SQInteger runtimeErrorHandler(HSQUIRRELVM v) {
   return 0;
 }
 
-// Debug and watchdog hook
-void debugHook(HSQUIRRELVM v, SQInteger type, const SQChar *sourcename,
-               SQInteger line, const SQChar *funcname) {
-  ScriptEngine *engine = (ScriptEngine *)sq_getforeignptr(v);
-  if (!engine)
-    return;
+// Debug hook moved to ScriptDebugger
 
-  // Debug logging to verify hook is active
-  fprintf(stderr, "DEBUG_HOOK: Type=%c Line=%lld Source=%s\n", (char)type,
-          (long long)line, sourcename ? sourcename : "null");
-  // LOG_INFO("DEBUG_HOOK: Type=%c Line=%lld Source=%s", (char)type, line,
-  // sourcename ? sourcename : "null");
-
-  // Watchdog check (timeout)
-  if (engine->m_watchdogEnabled) {
-    double elapsed = platform::Time::now() - engine->m_executionStartTime;
-    if (elapsed > engine->m_watchdogTimeout) {
-      sq_throwerror(v, "Watchdog timeout: Execution time limit exceeded");
-      return;
-    }
-  }
-
-  // Handle explicit termination request
-  if (engine->m_terminateRequested) {
-    engine->m_terminateRequested = false;
-    sq_throwerror(v, "Execution terminated by user");
-    return;
-  }
-
-  // Debugger check - only on line events (type 'l')
-  if (engine->m_debugEnabled && type == 'l') {
-    bool shouldStop = false;
-    std::string stopReason;
-    std::string file = sourcename ? sourcename : "";
-
-    // Debug logging for breakpoint state
-    // Only log occasionally or if size > 0 to diagnose
-    // if (engine->m_breakpoints.size() > 0) {
-    //    fprintf(stderr, "HOOK: Line %lld. BPs: %zu\n", (long long)line,
-    //    engine->m_breakpoints.size()); for(auto& b : engine->m_breakpoints) {
-    //        fprintf(stderr, "  - BP: %s:%d (En: %d)\n", b.file.c_str(),
-    //        b.line, b.enabled);
-    //    }
-    // }
-
-    // Check breakpoints
-    for (const auto &bp : engine->m_breakpoints) {
-      if (bp.enabled && bp.line == static_cast<int>(line)) {
-        // Match Logic:
-        // 1. Exact match
-        // 2. Contains match (for partial paths)
-        // 3. Filename match (Fall-back for VFS vs Absolute path mismatch)
-
-        bool match = (file == bp.file);
-        if (!match && (file.find(bp.file) != std::string::npos ||
-                       bp.file.find(file) != std::string::npos)) {
-          match = true;
-        }
-
-        if (!match) {
-          // Extract filenames
-          auto sep1 = file.find_last_of("/\\");
-          std::string fn1 =
-              (sep1 == std::string::npos) ? file : file.substr(sep1 + 1);
-
-          auto sep2 = bp.file.find_last_of("/\\");
-          std::string fn2 =
-              (sep2 == std::string::npos) ? bp.file : bp.file.substr(sep2 + 1);
-
-          if (fn1 == fn2) {
-            match = true;
-          }
-        }
-
-        fprintf(stderr, "BP CHECK: Line %d. VM: '%s'. BP: '%s'. Match: %s\n",
-                (int)line, file.c_str(), bp.file.c_str(), match ? "YES" : "NO");
-
-        if (match) {
-          shouldStop = true;
-          stopReason = "breakpoint";
-          break;
-        }
-      }
-    }
-
-    // Check step action
-    if (!shouldStop && engine->m_debugAction != DebugAction::None) {
-      switch (engine->m_debugAction) {
-      case DebugAction::StepIn:
-        shouldStop = true;
-        stopReason = "step";
-        break;
-      case DebugAction::StepOver: {
-        // Stop if same or lower depth
-        SQInteger depth = 0;
-        SQStackInfos si;
-        while (SQ_SUCCEEDED(sq_stackinfos(v, depth, &si)))
-          depth++;
-        if (static_cast<int>(depth) <= engine->m_stepStartDepth) {
-          shouldStop = true;
-          stopReason = "step";
-        }
-        break;
-      }
-      case DebugAction::StepOut: {
-        // Stop if lower depth (returned from function)
-        SQInteger depth = 0;
-        SQStackInfos si;
-        while (SQ_SUCCEEDED(sq_stackinfos(v, depth, &si)))
-          depth++;
-        if (static_cast<int>(depth) < engine->m_stepStartDepth) {
-          shouldStop = true;
-          stopReason = "step";
-        }
-        break;
-      }
-      case DebugAction::Continue:
-        // Only stop at breakpoints (already checked above)
-        break;
-      default:
-        break;
-      }
-    }
-
-    if (shouldStop) {
-      engine->m_debugAction = DebugAction::None;
-      engine->m_debugPaused = true;
-
-      // Notify callback
-      if (engine->m_onDebugStop) {
-        engine->m_onDebugStop(static_cast<int>(line), file, stopReason);
-      }
-
-      // Note: In a real implementation, we would need to block here
-      // until the debugger signals to continue. For cooperative debugging,
-      // we set m_debugPaused and the main loop checks this flag.
-      // UPDATE: We now block here to preserve stack state!
-      while (engine->m_debugPaused && !engine->m_terminateRequested) {
-        if (engine->m_onDebugUpdate) {
-          engine->m_onDebugUpdate();
-        } else {
-          // No UI loop available, just sleep (fallback)
-          // Note: using sleep implies we need <thread> and <chrono>
-          // Ideally we shouldn't hit this path if Workbench is attached.
-        }
-      }
-    }
-  }
+ScriptEngine::ScriptEngine() {
+  m_debugger = std::make_unique<ScriptDebugger>(this);
 }
-
-class ScopedWatchdog {
-public:
-  explicit ScopedWatchdog(ScriptEngine *engine) : m_engine(engine) {
-    if (m_engine->m_watchdogEnabled && !m_engine->m_debugEnabled) {
-      m_engine->m_executionStartTime = platform::Time::now();
-      // Hook on lines to catch infinite loops (while(true))
-      sq_setnativedebughook(m_engine->getVm(), debugHook);
-    }
-  }
-  ~ScopedWatchdog() {
-    if (m_engine->m_watchdogEnabled && !m_engine->m_debugEnabled) {
-      sq_setnativedebughook(m_engine->getVm(), nullptr);
-    }
-  }
-
-private:
-  ScriptEngine *m_engine;
-};
-
-ScriptEngine::ScriptEngine() {}
 
 ScriptEngine::~ScriptEngine() { shutdown(); }
 
@@ -310,14 +145,10 @@ bool ScriptEngine::initialize(vfs::IVfs *vfs, ScriptConfig config) {
   sq_pop(m_vm, 1); // Pop root
 
   // Re-attach debug hook if debugging was enabled (persisted across reloads)
-  // Re-attach debug hook if debugging was enabled (persisted across reloads)
-  if (m_debugEnabled) {
-    fprintf(stderr, "DEBUG: ScriptEngine::initialize: m_debugEnabled is TRUE. "
-                    "Re-attaching hook.\n");
-    sq_setnativedebughook(m_vm, debugHook);
-  } else {
-    fprintf(stderr, "DEBUG: ScriptEngine::initialize: m_debugEnabled is FALSE. "
-                    "No hook attached.\n");
+  // Attach debugger if configured
+  m_debugger->attach(m_vm);
+  if (config.debugInfo) {
+    m_debugger->setEnabled(true);
   }
 
   LOG_INFO("Squirrel VM initialized");
@@ -366,58 +197,46 @@ void ScriptEngine::setWatchdog(bool enable, f64 timeoutSec) {
 // ========== DEBUGGER IMPLEMENTATION ==========
 
 void ScriptEngine::setDebugEnabled(bool enable) {
-  fprintf(stderr, "DEBUG: ScriptEngine::setDebugEnabled(%s). VM=%p\n",
-          enable ? "true" : "false", (void *)m_vm);
-  // LOG_INFO("ScriptEngine::setDebugEnabled(%s). VM=%p", enable ? "true" :
-  // "false", m_vm);
-  m_debugEnabled = enable;
-  if (m_vm) {
-    if (enable) {
-      sq_setnativedebughook(m_vm, debugHook);
-    } else {
-      sq_setnativedebughook(m_vm, nullptr);
-    }
+  if (m_debugger) {
+    m_debugger->setEnabled(enable);
   }
 }
 
+bool ScriptEngine::isDebugEnabled() const {
+  return m_debugger && m_debugger->isEnabled();
+}
+
 void ScriptEngine::setDebugAction(DebugAction action) {
-  m_debugAction = action;
-  if (action != DebugAction::None) {
-    // Record current stack depth for step over/out
-    if (m_vm) {
-      SQInteger depth = 0;
-      SQStackInfos si;
-      while (SQ_SUCCEEDED(sq_stackinfos(m_vm, depth, &si)))
-        depth++;
-      m_stepStartDepth = static_cast<int>(depth);
+  if (m_debugger) {
+    // Logic for resume moved to debugger
+    if (action == DebugAction::Continue) {
+      m_debugger->resume();
+    } else {
+      m_debugger->setAction(action);
+      // If paused, we might need to resume to step?
+      // If we are setting an action, we probably want to resume if paused.
+      m_debugger->resume();
     }
-    m_debugPaused = false; // Resume execution
   }
 }
 
 void ScriptEngine::addBreakpoint(const std::string &file, int line) {
-  fprintf(stderr, "ScriptEngine::addBreakpoint %s:%d\n", file.c_str(), line);
-  // Check if already exists
-  for (auto &bp : m_breakpoints) {
-    if (bp.file == file && bp.line == line) {
-      bp.enabled = true;
-      return;
-    }
+  if (m_debugger) {
+    m_debugger->getBreakpoints().add(file, line);
   }
-  m_breakpoints.push_back({file, line, true});
 }
 
 void ScriptEngine::removeBreakpoint(const std::string &file, int line) {
-  fprintf(stderr, "ScriptEngine::removeBreakpoint %s:%d\n", file.c_str(), line);
-  m_breakpoints.erase(std::remove_if(m_breakpoints.begin(), m_breakpoints.end(),
-                                     [&](const DebugBreakpoint &bp) {
-                                       return bp.file == file &&
-                                              bp.line == line;
-                                     }),
-                      m_breakpoints.end());
+  if (m_debugger) {
+    m_debugger->getBreakpoints().remove(file, line);
+  }
 }
 
-void ScriptEngine::clearBreakpoints() { m_breakpoints.clear(); }
+void ScriptEngine::clearBreakpoints() {
+  if (m_debugger) {
+    m_debugger->getBreakpoints().clear();
+  }
+}
 
 std::vector<LocalVar> ScriptEngine::getLocals(int stackLevel) {
   std::vector<LocalVar> result;
@@ -692,6 +511,14 @@ bool ScriptEngine::executeScript(const std::string &vfsPath) {
   return true;
 }
 
+const std::vector<DebugBreakpoint> &ScriptEngine::getBreakpoints() const {
+  static const std::vector<DebugBreakpoint> empty;
+  if (m_debugger) {
+    return m_debugger->getBreakpoints().getAll();
+  }
+  return empty;
+}
+
 void ScriptEngine::callInit() {
   if (!m_vm)
     return;
@@ -702,7 +529,7 @@ void ScriptEngine::callInit() {
     // Push root table as 'this' for the call
     sq_pushroottable(m_vm);
 
-    ScopedWatchdog watchdog(this);
+    // ScopedWatchdog removed, logic handled by debugger hook if active
     SQRESULT res = sq_call(m_vm, 1, SQFalse, SQTrue);
     if (SQ_FAILED(res)) {
       LOG_ERROR("Failed to call init()");
@@ -716,6 +543,10 @@ void ScriptEngine::callInit() {
 }
 
 bool ScriptEngine::callUpdate(f64 dt) {
+  // If paused, do nothing (gameplay suspended)
+  //   if (m_debugger && m_debugger->isPaused())
+  //     return true;
+
   sq_pushroottable(m_vm);
   sq_pushstring(m_vm, "update", -1);
   if (SQ_FAILED(sq_get(m_vm, -2))) {
@@ -727,8 +558,21 @@ bool ScriptEngine::callUpdate(f64 dt) {
   sq_pushfloat(m_vm, static_cast<SQFloat>(dt));
 
   m_terminateRequested = false; // Reset flag at start of frame
-  ScopedWatchdog watchdog(this);
-  if (SQ_FAILED(sq_call(m_vm, 2, SQFalse, SQTrue))) {
+
+  // NOTE: We don't use ScopedWatchdog here explicitly, ScopedWatchdog logic
+  // pending move. For now we assume Debugger hook handles it or we'll add it
+  // back to Debugger.
+
+  SQRESULT res = sq_call(m_vm, 2, SQFalse, SQTrue);
+
+  // Handle Suspension
+  if (sq_getvmstate(m_vm) == SQ_VMSTATE_SUSPENDED) {
+    // Suspended! Do NOT pop anything.
+    // Also notify anyone?
+    return true;
+  }
+
+  if (SQ_FAILED(res)) {
     LOG_ERROR("Failed to call update(dt)");
     sq_pop(m_vm, 2);
     return false;
@@ -749,8 +593,15 @@ bool ScriptEngine::callDraw(f64 alpha) {
   sq_pushroottable(m_vm);
   sq_pushfloat(m_vm, static_cast<SQFloat>(alpha));
 
-  ScopedWatchdog watchdog(this);
-  if (SQ_FAILED(sq_call(m_vm, 2, SQFalse, SQTrue))) {
+  // No watchdog on draw directly, or share logic?
+
+  SQRESULT res = sq_call(m_vm, 2, SQFalse, SQTrue);
+
+  if (sq_getvmstate(m_vm) == SQ_VMSTATE_SUSPENDED) {
+    return true;
+  }
+
+  if (SQ_FAILED(res)) {
     LOG_ERROR("Failed to call draw(alpha)");
     sq_pop(m_vm, 2);
     return false;
@@ -763,9 +614,11 @@ bool ScriptEngine::callDraw(f64 alpha) {
 void ScriptEngine::terminate() {
   if (m_vm) {
     m_terminateRequested = true;
-    m_debugPaused = false; // Force resume so we can hit the hook
-    // Ensure debug hook is enabled so we catch the next instruction
-    sq_setnativedebughook(m_vm, debugHook);
+    // We should resume if paused to allow termination exception to throw?
+    if (m_debugger && m_debugger->isPaused()) {
+      m_debugger->resume();
+    }
+    // ensure hook is engaged (debugger does this if enabled)
   }
 }
 

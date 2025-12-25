@@ -120,7 +120,8 @@ bool Workbench::initialize(render::RenderDevice *device,
     fprintf(stderr, "Workbench: StartCartridgeFn called. Runtime=%p\n",
             (void *)m_runtime);
     if (m_runtime) {
-      return m_runtime->startCartridge();
+      m_runtime->scheduleStartCartridge();
+      return true; // We assume success or will fail async
     }
     return false;
   });
