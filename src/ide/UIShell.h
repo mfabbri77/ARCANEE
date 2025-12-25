@@ -1,5 +1,6 @@
 #pragma once
 #include "common/Status.h"
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <mutex>
@@ -69,6 +70,7 @@ private:
   void RenderConsolePane();
   void RenderPreviewPane();
   void RenderFolderDialog();
+  void RenderNewProjectDialog();
 
   MainThreadQueue &m_queue;
 
@@ -76,11 +78,38 @@ private:
   bool m_showCommandPalette = false;
   bool m_showFolderDialog = false;
   std::string m_folderDialogPath;
+  std::string m_folderDialogError; // Error message for folder validation
+  bool m_showNewProjectDialog = false;
+  char m_newProjectName[256] = {};
+  std::string m_newProjectError;
   std::function<void()> m_requestExitFn;
+
+  // Preview callbacks
+  std::function<bool(const std::string &)> m_loadCartridgeFn;
+  std::function<void *()> m_getPreviewTextureFn;
+  std::function<void(uint32_t &, uint32_t &)> m_getPreviewSizeFn;
+  std::function<void()> m_clearPreviewFn;
+  bool m_previewRunning = false;
 
 public:
   void SetRequestExitFn(std::function<void()> fn) {
     m_requestExitFn = std::move(fn);
+  }
+
+  void SetLoadCartridgeFn(std::function<bool(const std::string &)> fn) {
+    m_loadCartridgeFn = std::move(fn);
+  }
+
+  void SetGetPreviewTextureFn(std::function<void *()> fn) {
+    m_getPreviewTextureFn = std::move(fn);
+  }
+
+  void SetGetPreviewSizeFn(std::function<void(uint32_t &, uint32_t &)> fn) {
+    m_getPreviewSizeFn = std::move(fn);
+  }
+
+  void SetClearPreviewFn(std::function<void()> fn) {
+    m_clearPreviewFn = std::move(fn);
   }
 
 private:

@@ -107,7 +107,40 @@ bool Workbench::initialize(render::RenderDevice *device,
       m_runtime->requestExit();
     }
   });
-  LOG_INFO("Workbench: UIShell initialized");
+
+  // Preview callbacks - connect UIShell to Runtime
+  m_uiShell->SetLoadCartridgeFn([this](const std::string &path) -> bool {
+    if (m_runtime) {
+      return m_runtime->loadCartridge(path);
+    }
+    return false;
+  });
+
+  m_uiShell->SetGetPreviewTextureFn([this]() -> void * {
+    if (m_runtime && m_runtime->getCanvas2D()) {
+      return m_runtime->getCanvas2D()->getShaderResourceView();
+    }
+    return nullptr;
+  });
+
+  m_uiShell->SetGetPreviewSizeFn([this](uint32_t &w, uint32_t &h) {
+    if (m_runtime && m_runtime->getCanvas2D()) {
+      w = m_runtime->getCanvas2D()->getWidth();
+      h = m_runtime->getCanvas2D()->getHeight();
+    } else {
+      w = h = 0;
+    }
+  });
+
+  m_uiShell->SetClearPreviewFn([this]() {
+    if (m_runtime && m_runtime->getCanvas2D()) {
+      m_runtime->getCanvas2D()->beginFrame();
+      m_runtime->getCanvas2D()->clear(0xFF000000); // Clear to black
+      // Note: endFrame would upload, but we'll let the next frame do that
+    }
+  });
+
+  LOG_INFO("Workbench: UIShell initialized with preview callbacks");
 #endif
 
   LOG_INFO("Workbench: Initialized successfully");

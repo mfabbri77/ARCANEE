@@ -3,6 +3,7 @@
 #include "imgui_internal.h" // Required for DockBuilder API
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 
 namespace arcanee::ide {
@@ -88,12 +89,15 @@ void UIShell::RenderFrame() {
     RenderPreviewPane();
   }
 
-  // 7. Render Overlays (Command Palette, Folder Dialog)
+  // 7. Render Overlays (Command Palette, Folder Dialog, New Project Dialog)
   if (m_showCommandPalette) {
     RenderCommandPalette();
   }
   if (m_showFolderDialog) {
     RenderFolderDialog();
+  }
+  if (m_showNewProjectDialog) {
+    RenderNewProjectDialog();
   }
 
   // Demo window for debugging
@@ -176,8 +180,22 @@ void UIShell::RenderDockspace() {
   if (ImGui::BeginMenuBar()) {
     // === FILE MENU ===
     if (ImGui::BeginMenu("File")) {
+      if (ImGui::MenuItem("New Project...")) {
+        m_newProjectName[0] = '\0';
+        m_newProjectError.clear();
+        m_showNewProjectDialog = true;
+      }
       if (ImGui::MenuItem("Open Folder...", "Ctrl+O")) {
-        m_folderDialogPath = std::filesystem::current_path().string();
+        // Start from samples/ directory if it exists
+        std::filesystem::path samplesPath =
+            std::filesystem::current_path() / "samples";
+        if (std::filesystem::exists(samplesPath) &&
+            std::filesystem::is_directory(samplesPath)) {
+          m_folderDialogPath = samplesPath.string();
+        } else {
+          m_folderDialogPath = std::filesystem::current_path().string();
+        }
+        m_folderDialogError.clear();
         m_showFolderDialog = true;
       }
       ImGui::Separator();
@@ -284,6 +302,8 @@ void DrawTree(const FileNode &node,
   }
 
   if (node.isDirectory) {
+    // Expand directories by default (user can still collapse)
+    ImGui::SetNextItemOpen(true, ImGuiCond_Once);
     bool open = ImGui::TreeNode(node.name.c_str());
     if (open) {
       for (const auto &child : node.children) {
@@ -369,18 +389,31 @@ void UIShell::RenderPanes() {
       const ParseResult *parseRes = m_parseService.GetHighlights(doc->path);
 
       // 1. Render Text
+      // Calculate gutter width for line numbers
+      char lineNumBuf[16];
+      snprintf(lineNumBuf, sizeof(lineNumBuf), "%d", totalLines);
+      float gutterWidth = ImGui::CalcTextSize(lineNumBuf).x + 20.0f; // padding
+
       for (int i = firstLine; i < lastLine; ++i) {
         std::string line = buffer.GetLine(i);
         uint32_t lineStart = buffer.GetLineStart(i); // Offset
 
         ImGui::SetCursorPosY((float)i * lineHeight);
 
-        // Standard render
-        // ImGui::TextUnformatted(line.c_str());
+        // Render line number in gutter
+        ImGui::SetCursorPosX(0);
+        snprintf(lineNumBuf, sizeof(lineNumBuf), "%d", i + 1); // 1-based
+        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(128, 128, 128, 255));
+        ImGui::TextUnformatted(lineNumBuf);
+        ImGui::PopStyleColor();
+
+        // Move to text area (after gutter)
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(gutterWidth);
 
         // Highlighted render
         if (parseRes && !parseRes->highlights.empty()) {
-          float x = 0;
+          float x = gutterWidth;
           size_t currentPos = 0;
           while (currentPos < line.size()) {
             uint32_t absPos = lineStart + currentPos;
@@ -436,7 +469,7 @@ void UIShell::RenderPanes() {
             0, std::min((size_t)headCol, headLineStr.size()));
         float headX = ImGui::CalcTextSize(headSub.c_str()).x;
         ImVec2 headScreenPos =
-            ImVec2(winPos.x - scrollX + headX,
+            ImVec2(winPos.x - scrollX + gutterWidth + headX,
                    winPos.y - scrollY + (float)headLine * lineHeight);
 
         // Draw Cursor
@@ -480,7 +513,7 @@ void UIShell::RenderPanes() {
             if (w == 0)
               w = 5; // Width for empty line selection
 
-            ImVec2 pMin(winPos.x - scrollX + x1,
+            ImVec2 pMin(winPos.x - scrollX + gutterWidth + x1,
                         winPos.y - scrollY + (float)l * lineHeight);
             ImVec2 pMax(pMin.x + w, pMin.y + lineHeight);
 
@@ -694,30 +727,74 @@ void UIShell::RenderPanes() {
   ImGui::End();
 
   if (ImGui::Begin("Preview")) {
-    Document *doc = m_documentSystem.GetActiveDocument();
-
-    if (ImGui::Button("Run Preview")) {
-      if (doc) {
-        // MVP: Placeholder for runtime preview integration
-        // In full implementation, this would launch the script in embedded
-        // runtime
-        ImGui::OpenPopup("PreviewRunning");
+    // Run/Stop buttons
+    if (!m_previewRunning) {
+      if (ImGui::Button("Run Preview")) {
+        if (m_loadCartridgeFn && m_projectSystem.HasProject()) {
+          std::string projectPath = m_projectSystem.GetRoot().fullPath;
+          if (m_loadCartridgeFn(projectPath)) {
+            m_previewRunning = true;
+          }
+        }
       }
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Stop")) {
-      // Stop preview execution
+    } else {
+      if (ImGui::Button("Stop Preview")) {
+        m_previewRunning = false;
+        // Note: Runtime continues, we just hide the preview
+      }
     }
 
     ImGui::Separator();
 
     // Preview area
     ImGui::BeginChild("PreviewArea", ImVec2(0, 0), true);
-    ImGui::Text("Runtime Preview");
-    ImGui::TextDisabled("(Preview integration pending full Runtime binding)");
-    if (doc) {
-      ImGui::Text("Current file: %s", doc->path.c_str());
+
+    if (m_previewRunning && m_getPreviewTextureFn && m_getPreviewSizeFn) {
+      void *texPtr = m_getPreviewTextureFn();
+      if (texPtr) {
+        uint32_t texW = 0, texH = 0;
+        m_getPreviewSizeFn(texW, texH);
+
+        if (texW > 0 && texH > 0) {
+          // Calculate size maintaining aspect ratio
+          ImVec2 availSize = ImGui::GetContentRegionAvail();
+          float texAspect = (float)texW / (float)texH;
+          float availAspect = availSize.x / availSize.y;
+
+          ImVec2 imageSize;
+          if (texAspect > availAspect) {
+            imageSize.x = availSize.x;
+            imageSize.y = availSize.x / texAspect;
+          } else {
+            imageSize.y = availSize.y;
+            imageSize.x = availSize.y * texAspect;
+          }
+
+          // Center the image
+          ImVec2 cursorPos = ImGui::GetCursorPos();
+          ImGui::SetCursorPos(
+              ImVec2(cursorPos.x + (availSize.x - imageSize.x) * 0.5f,
+                     cursorPos.y + (availSize.y - imageSize.y) * 0.5f));
+
+          ImGui::Image(texPtr, imageSize);
+
+          // Status bar
+          ImGui::SetCursorPos(
+              ImVec2(cursorPos.x, cursorPos.y + availSize.y - 20));
+          ImGui::Text("Resolution: %ux%u", texW, texH);
+        } else {
+          ImGui::Text("Starting...");
+        }
+      } else {
+        ImGui::Text("Waiting for frame...");
+      }
+    } else if (!m_projectSystem.HasProject()) {
+      ImGui::TextWrapped("No project open.");
+      ImGui::TextWrapped("Use File > Open Folder to open a project.");
+    } else {
+      ImGui::Text("Click 'Run Preview' to start.");
     }
+
     ImGui::EndChild();
   }
   ImGui::End();
@@ -1139,10 +1216,50 @@ void UIShell::RenderFolderDialog() {
           std::string name = entry.path().filename().string();
           // Skip hidden directories
           if (!name.empty() && name[0] != '.') {
-            if (ImGui::Selectable(name.c_str(), false,
+            // Check if folder has main.nut (valid project)
+            std::filesystem::path mainNutPath = entry.path() / "main.nut";
+            bool isProject = std::filesystem::exists(mainNutPath);
+
+            // Add icon prefix for project folders
+            std::string label = isProject ? "[P] " + name : name;
+
+            if (ImGui::Selectable(label.c_str(), false,
                                   ImGuiSelectableFlags_AllowDoubleClick)) {
               if (ImGui::IsMouseDoubleClicked(0)) {
-                m_folderDialogPath = entry.path().string();
+                if (isProject) {
+                  // Double-click on project: open it directly
+                  m_folderDialogPath = entry.path().string();
+
+                  // Stop any running preview and clear canvas
+                  m_previewRunning = false;
+                  if (m_clearPreviewFn) {
+                    m_clearPreviewFn();
+                  }
+
+                  // Open the project
+                  m_projectSystem.OpenRoot(m_folderDialogPath);
+
+                  // Auto-open main.nut
+                  Document *doc = nullptr;
+                  if (m_documentSystem.OpenDocument(mainNutPath.string(), &doc)
+                          .ok()) {
+                    m_documentSystem.SetActiveDocument(doc);
+                  }
+
+                  // Auto-load and start preview
+                  if (m_loadCartridgeFn &&
+                      m_loadCartridgeFn(m_folderDialogPath)) {
+                    m_previewRunning = true;
+                  }
+
+                  m_showPreview = true;
+                  m_folderDialogError.clear();
+                  m_showFolderDialog = false;
+                  ImGui::CloseCurrentPopup();
+                } else {
+                  // Double-click on regular folder: navigate into it
+                  m_folderDialogPath = entry.path().string();
+                }
               }
             }
           }
@@ -1155,15 +1272,141 @@ void UIShell::RenderFolderDialog() {
 
     ImGui::Separator();
 
+    // Show error if folder doesn't have main.nut
+    if (!m_folderDialogError.empty()) {
+      ImGui::TextColored(ImVec4(1, 0.3f, 0.3f, 1), "%s",
+                         m_folderDialogError.c_str());
+    }
+
     // Action buttons
     if (ImGui::Button("Open", ImVec2(100, 0))) {
-      m_projectSystem.OpenRoot(m_folderDialogPath);
-      m_showFolderDialog = false;
-      ImGui::CloseCurrentPopup();
+      // Validate: folder must contain main.nut
+      std::filesystem::path mainNut =
+          std::filesystem::path(m_folderDialogPath) / "main.nut";
+      if (!std::filesystem::exists(mainNut)) {
+        m_folderDialogError = "Invalid project: main.nut not found";
+      } else {
+        // Stop any running preview and clear canvas
+        m_previewRunning = false;
+        if (m_clearPreviewFn) {
+          m_clearPreviewFn();
+        }
+
+        m_projectSystem.OpenRoot(m_folderDialogPath);
+
+        // Auto-open main.nut
+        Document *doc = nullptr;
+        if (m_documentSystem.OpenDocument(mainNut.string(), &doc).ok()) {
+          m_documentSystem.SetActiveDocument(doc);
+        }
+
+        // Auto-load and start preview
+        if (m_loadCartridgeFn && m_loadCartridgeFn(m_folderDialogPath)) {
+          m_previewRunning = true;
+        }
+
+        m_showPreview = true;
+        m_folderDialogError.clear();
+        m_showFolderDialog = false;
+        ImGui::CloseCurrentPopup();
+      }
     }
     ImGui::SameLine();
     if (ImGui::Button("Cancel", ImVec2(100, 0))) {
+      m_folderDialogError.clear();
       m_showFolderDialog = false;
+      ImGui::CloseCurrentPopup();
+    }
+
+    // ESC to close
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+      m_folderDialogError.clear();
+      m_showFolderDialog = false;
+      ImGui::CloseCurrentPopup();
+    }
+
+    ImGui::EndPopup();
+  }
+}
+
+void UIShell::RenderNewProjectDialog() {
+  ImGui::OpenPopup("New Project");
+
+  ImGuiViewport *viewport = ImGui::GetMainViewport();
+  ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Appearing,
+                          ImVec2(0.5f, 0.5f));
+  ImGui::SetNextWindowSize(ImVec2(400, 180));
+
+  if (ImGui::BeginPopupModal("New Project", &m_showNewProjectDialog,
+                             ImGuiWindowFlags_NoResize)) {
+    ImGui::Text("Project Name:");
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputText("##ProjectName", m_newProjectName,
+                     sizeof(m_newProjectName));
+
+    // Show error if any
+    if (!m_newProjectError.empty()) {
+      ImGui::TextColored(ImVec4(1, 0.3f, 0.3f, 1), "%s",
+                         m_newProjectError.c_str());
+    }
+
+    ImGui::Separator();
+
+    if (ImGui::Button("Create", ImVec2(100, 0))) {
+      std::string name(m_newProjectName);
+      if (name.empty()) {
+        m_newProjectError = "Project name cannot be empty";
+      } else {
+        // Create folder in samples/
+        std::filesystem::path samplesPath =
+            std::filesystem::current_path() / "samples";
+        std::filesystem::path projectPath = samplesPath / name;
+
+        if (std::filesystem::exists(projectPath)) {
+          m_newProjectError = "Project already exists";
+        } else {
+          try {
+            // Create directory
+            std::filesystem::create_directories(projectPath);
+
+            // Create empty main.nut
+            std::filesystem::path mainNut = projectPath / "main.nut";
+            std::ofstream ofs(mainNut);
+            ofs << "// " << name << " - main.nut\n";
+            ofs << "// Created by ARCANEE IDE\n";
+            ofs.close();
+
+            // Open the new project
+            m_projectSystem.OpenRoot(projectPath.string());
+
+            // Open main.nut in editor
+            Document *doc = nullptr;
+            if (m_documentSystem.OpenDocument(mainNut.string(), &doc).ok()) {
+              m_documentSystem.SetActiveDocument(doc);
+            }
+
+            m_showPreview = true;
+            m_newProjectError.clear();
+            m_showNewProjectDialog = false;
+            ImGui::CloseCurrentPopup();
+          } catch (const std::exception &e) {
+            m_newProjectError =
+                std::string("Failed to create project: ") + e.what();
+          }
+        }
+      }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel", ImVec2(100, 0))) {
+      m_newProjectError.clear();
+      m_showNewProjectDialog = false;
+      ImGui::CloseCurrentPopup();
+    }
+
+    // ESC to close
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+      m_newProjectError.clear();
+      m_showNewProjectDialog = false;
       ImGui::CloseCurrentPopup();
     }
 

@@ -63,6 +63,9 @@ public:
 
   input::InputManager *getInputManager() const { return m_inputManager.get(); }
 
+  // Canvas2D accessor for IDE preview
+  render::Canvas2D *getCanvas2D() const { return m_canvas2d.get(); }
+
 private:
   void initSubsystems();
   void shutdownSubsystems();
