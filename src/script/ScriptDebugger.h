@@ -44,6 +44,14 @@ public:
                                           const std::string &reason)>;
   void setStopCallback(StopCallback cb) { m_onStop = cb; }
 
+  // UI pump callback - called while waiting at breakpoint to keep UI responsive
+  using UIPumpCallback = std::function<void()>;
+  void setUIPumpCallback(UIPumpCallback cb) { m_uiPump = cb; }
+
+  // Should exit callback - returns true when app wants to quit
+  using ShouldExitCallback = std::function<bool()>;
+  void setShouldExitCallback(ShouldExitCallback cb) { m_shouldExit = cb; }
+
 private:
   void onHook(HSQUIRRELVM v, SQInteger type, const std::string &file, int line,
               const std::string &func);
@@ -61,6 +69,8 @@ private:
   int m_currentDepth = 0; // Current call stack depth (tracked)
 
   StopCallback m_onStop;
+  UIPumpCallback m_uiPump;
+  ShouldExitCallback m_shouldExit;
 };
 
 } // namespace arcanee::script

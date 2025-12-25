@@ -80,6 +80,9 @@ public:
   void resume() { m_isPaused = false; }
   bool isPaused() const { return m_isPaused; }
 
+  // Pump UI frame while paused at breakpoint (keeps UI responsive)
+  void pumpUIFrame();
+
 private:
   void initSubsystems();
   void shutdownSubsystems();

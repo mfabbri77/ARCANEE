@@ -80,6 +80,10 @@ public:
   void SetOnStopped(StoppedCallback cb) { m_onStopped = cb; }
   void SetOnOutput(OutputCallback cb) { m_onOutput = cb; }
 
+  // UI pump callback - called while paused at breakpoint to keep UI responsive
+  using UIPumpCallback = std::function<void()>;
+  void SetUIPump(UIPumpCallback cb);
+
 private:
   // Internal helpers
   std::string ToVfsPath(const std::string &hostPath);

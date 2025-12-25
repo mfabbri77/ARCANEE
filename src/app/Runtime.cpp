@@ -205,6 +205,10 @@ void Runtime::initSubsystems() {
   // Register Debug Update Callback
   if (m_scriptEngine) {
     m_scriptEngine->setDebugUpdateCallback([this]() { this->onDebugUpdate(); });
+    // Also set UI pump callback for blocking debugger loop
+    m_scriptEngine->setDebugUIPump([this]() { this->onDebugUpdate(); });
+    // Allow debug loop to exit when app wants to quit
+    m_scriptEngine->setDebugShouldExit([this]() { return !m_isRunning; });
   }
 
   // Forward SDL events to Workbench for ImGui input

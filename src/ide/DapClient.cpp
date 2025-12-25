@@ -9,8 +9,12 @@ DapClient::DapClient() {}
 DapClient::~DapClient() { Disconnect(); }
 
 std::string DapClient::ToVfsPath(const std::string &hostPath) {
-  if (m_projectRoot.empty() || hostPath.empty())
+  fprintf(stderr, "ToVfsPath: ProjectRoot='%s' hostPath='%s'\n",
+          m_projectRoot.c_str(), hostPath.c_str());
+  if (m_projectRoot.empty() || hostPath.empty()) {
+    fprintf(stderr, "  -> returning hostPath (root empty or hostPath empty)\n");
     return hostPath;
+  }
 
   // Basic normalization
   if (hostPath.find(m_projectRoot) == 0) {
@@ -18,11 +22,15 @@ std::string DapClient::ToVfsPath(const std::string &hostPath) {
     if (relative.length() > 0 && relative[0] == '/') {
       relative = relative.substr(1);
     }
-    return "cart:/" + relative;
+    std::string vfsPath = "cart:/" + relative;
+    fprintf(stderr, "  -> converted to VFS: '%s'\n", vfsPath.c_str());
+    return vfsPath;
   } else if (hostPath.find("cart:/") == 0) {
+    fprintf(stderr, "  -> already VFS path\n");
     return hostPath; // Already VFS path
   }
 
+  fprintf(stderr, "  -> no conversion possible, returning hostPath\n");
   return hostPath;
 }
 
@@ -52,24 +60,12 @@ void DapClient::SetScriptEngine(script::ScriptEngine *engine) {
         m_callStack.clear();
         int idCounter = 0;
         for (const auto &frame : stack) {
+          // Convert VFS path to host path for UI compatibility
           m_callStack.push_back(
-              {idCounter++, frame.name, frame.file, frame.line});
+              {idCounter++, frame.name, ToHostPath(frame.file), frame.line});
         }
         if (!m_callStack.empty()) {
-          // Ensure we point to the right file for the editor
-          // Stack file is VFS (from engine). We need Host path for Editor?
-          // Editor expects Host Path for opening docs.
-          // m_callStack file comes from engine, so it is VFS likely 'cart:/...'
-          // We should store Host Path in m_callStack if UI expects it?
-          // DapClient::GetCallStack() returns m_callStack.
-          // UIShell uses it.
-          // Let's convert in GetCallStack or here?
-          // Let's convert here for simple cache.
-          // Wait, 'frame.file' is from engine callstack.
-          // We should convert it to Host Path.
-          // But wait, user said "DapClient salva VFS... E per la UI/Editor...
-          // converti indietro". So let's convert here:
-          m_currentScript = ToHostPath(m_callStack[0].file);
+          m_currentScript = m_callStack[0].file;
         }
       }
 
@@ -84,6 +80,12 @@ void DapClient::SetScriptEngine(script::ScriptEngine *engine) {
         m_onStopped(reason, line, ToHostPath(file));
       }
     });
+  }
+}
+
+void DapClient::SetUIPump(UIPumpCallback cb) {
+  if (m_scriptEngine) {
+    m_scriptEngine->setDebugUIPump(std::move(cb));
   }
 }
 
@@ -380,7 +382,9 @@ std::vector<StackFrame> DapClient::GetCallStack() {
     auto realStack = m_scriptEngine->getCallStack();
     std::vector<StackFrame> result;
     for (const auto &frame : realStack) {
-      result.push_back({frame.id, frame.name, frame.file, frame.line});
+      // Convert VFS path to host path for UI compatibility
+      result.push_back(
+          {frame.id, frame.name, ToHostPath(frame.file), frame.line});
     }
     return result;
   }

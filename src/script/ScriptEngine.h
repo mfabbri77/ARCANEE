@@ -145,6 +145,19 @@ public:
   void setOnDebugStop(DebugStopCallback cb);
 
   /**
+   * @brief Callback to pump UI events while paused at breakpoint.
+   * This keeps the UI responsive during debugging.
+   */
+  using DebugUIPumpCallback = ScriptDebugger::UIPumpCallback;
+  void setDebugUIPump(DebugUIPumpCallback cb);
+
+  /**
+   * @brief Callback to check if app wants to exit during debug pause.
+   */
+  using DebugShouldExitCallback = ScriptDebugger::ShouldExitCallback;
+  void setDebugShouldExit(DebugShouldExitCallback cb);
+
+  /**
    * @brief Terminate execution immediately.
    */
   void terminate();

@@ -228,6 +228,16 @@ void ScriptEngine::setOnDebugStop(DebugStopCallback cb) {
     m_debugger->setStopCallback(std::move(cb));
 }
 
+void ScriptEngine::setDebugUIPump(DebugUIPumpCallback cb) {
+  if (m_debugger)
+    m_debugger->setUIPumpCallback(std::move(cb));
+}
+
+void ScriptEngine::setDebugShouldExit(DebugShouldExitCallback cb) {
+  if (m_debugger)
+    m_debugger->setShouldExitCallback(std::move(cb));
+}
+
 void ScriptEngine::setDebugAction(DebugAction action) {
   if (m_debugger) {
     // Logic for resume moved to debugger
@@ -243,6 +253,8 @@ void ScriptEngine::setDebugAction(DebugAction action) {
 }
 
 void ScriptEngine::addBreakpoint(const std::string &file, int line) {
+  LOG_INFO("addBreakpoint engine=%p vm=%p debugger=%p file=%s line=%d", this,
+           m_vm, m_debugger.get(), file.c_str(), line);
   if (m_debugger) {
     m_debugger->getBreakpoints().add(file, line);
   }
@@ -566,8 +578,8 @@ void ScriptEngine::callInit() {
 
 bool ScriptEngine::callUpdate(f64 dt) {
   // If paused, do nothing (gameplay suspended)
-  //   if (m_debugger && m_debugger->isPaused())
-  //     return true;
+  if (m_debugger && m_debugger->isPaused())
+    return true;
 
   sq_pushroottable(m_vm);
   sq_pushstring(m_vm, "update", -1);
