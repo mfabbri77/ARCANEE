@@ -24,6 +24,9 @@ public:
   // Sets the workspace root and scans it
   Status OpenRoot(const std::string &path);
 
+  // Closes the current root
+  void CloseRoot();
+
   // Re-scans the current root
   void Refresh();
 

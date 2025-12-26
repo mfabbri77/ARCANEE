@@ -31,12 +31,18 @@ ConfigSystem::~ConfigSystem() {
 void ConfigSystem::Initialize() {
   spdlog::info("[ConfigSystem] Initialized");
 
-  // Start watcher thread [REQ-HOTRELOAD]
-  m_watcherRunning = true;
-  m_watcherThread = std::thread(&ConfigSystem::WatcherLoop, this);
-
   DiscoverConfigRoot();
   LoadAllConfigs();
+
+  // Start watcher thread [REQ-HOTRELOAD]
+  // Update watched files list before starting thread to ensure it has work
+  std::vector<std::string> watchList = {
+      m_configRoot + "/color-schemes.toml", m_configRoot + "/editor.toml",
+      m_configRoot + "/gui.toml", m_configRoot + "/keys.toml"};
+  UpdateWatchedFiles(watchList);
+
+  m_watcherRunning = true;
+  m_watcherThread = std::thread(&ConfigSystem::WatcherLoop, this);
 }
 
 // -----------------------------------------------------------------------------
@@ -46,7 +52,7 @@ void ConfigSystem::Initialize() {
 // -----------------------------------------------------------------------------
 void ConfigSystem::DiscoverConfigRoot() {
   // Try cwd/config first
-  fs::path cwd_config = fs::current_path() / "config";
+  fs::path cwd_config = fs::absolute(fs::current_path() / "config");
   if (fs::exists(cwd_config) && fs::is_directory(cwd_config)) {
     m_configRoot = cwd_config.string();
     spdlog::info("[ConfigSystem] Using config root: {}", m_configRoot);
@@ -183,22 +189,32 @@ void ConfigSystem::LoadAllConfigs() {
 // OnIdeSavedFile - called when IDE saves a file [REQ-91]
 // -----------------------------------------------------------------------------
 void ConfigSystem::OnIdeSavedFile(const std::string &absolute_path) {
-  // Check if it's a config file
-  if (absolute_path.find("/config/") == std::string::npos &&
-      absolute_path.find("\\config\\") == std::string::npos) {
-    return;
+  try {
+    fs::path savedPath = fs::absolute(absolute_path);
+    fs::path configRoot = fs::absolute(m_configRoot);
+
+    // Check if file is inside config root
+    // Simple lexicographical check on canonical paths is usually sufficient
+    // provided both are absolute and normalized.
+    std::string savedStr = savedPath.string();
+    std::string configStr = configRoot.string();
+
+    if (savedStr.find(configStr) != 0) {
+      return; // Not in config root
+    }
+
+    // Check for .toml extension
+    if (savedPath.extension() != ".toml") {
+      return;
+    }
+
+    spdlog::debug("[ConfigSystem] Config file saved: {}", absolute_path);
+
+    // Trigger debounced reload
+    DebouncedReload();
+  } catch (const std::exception &e) {
+    spdlog::warn("[ConfigSystem] Error checking saved file path: {}", e.what());
   }
-
-  // Check for .toml extension
-  if (absolute_path.size() < 5 ||
-      absolute_path.substr(absolute_path.size() - 5) != ".toml") {
-    return;
-  }
-
-  spdlog::debug("[ConfigSystem] Config file saved: {}", absolute_path);
-
-  // Trigger debounced reload
-  DebouncedReload();
 }
 
 // -----------------------------------------------------------------------------
@@ -235,6 +251,12 @@ void ConfigSystem::DebouncedReload() {
 // -----------------------------------------------------------------------------
 void ConfigSystem::PerformReload(uint64_t reload_seq) {
   spdlog::debug("[ConfigSystem] Performing reload, seq={}", reload_seq);
+
+  // Re-populate watched files to catch new creations
+  std::vector<std::string> watchList = {
+      m_configRoot + "/color-schemes.toml", m_configRoot + "/editor.toml",
+      m_configRoot + "/gui.toml", m_configRoot + "/keys.toml"};
+  UpdateWatchedFiles(watchList);
 
   auto snapshot = std::make_shared<ConfigSnapshot>();
   snapshot->paths.config_root = m_configRoot;

@@ -25,6 +25,7 @@ class ScriptEngine; // Forward declaration
 
 // Forward declaration of ImGui structures if needed, but we typically use
 // internal dispatch.
+struct ImFont;
 
 namespace arcanee::ide {
 
@@ -223,6 +224,8 @@ private:
   bool m_fontNeedsRebuild = false;
   config::FontSpec m_currentEditorFont;
   config::FontSpec m_currentUiFont;
+  ImFont *m_editorImFont = nullptr; // Ptr to Editor Font (don't own)
+  ImFont *m_uiImFont = nullptr;     // Ptr to UI Font (don't own)
   float m_lastScaleFactor = 1.0f;
   std::function<void()> m_fontRebuildFn;
 };

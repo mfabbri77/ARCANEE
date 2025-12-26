@@ -367,14 +367,20 @@ bool ConfigSchema::ParseGuiConfig(const std::string &toml_content,
         out_config.ui_font.family = *family;
       }
     }
-    if (auto size = (*font)["size_px"].value<double>()) {
+    auto sizeNode = (*font)["size_px"];
+    if (auto size = sizeNode.value<double>()) {
       out_config.ui_font.size_px = static_cast<float>(*size);
+    } else if (auto size_i = sizeNode.value<int64_t>()) {
+      out_config.ui_font.size_px = static_cast<float>(*size_i);
     }
     if (auto weight = (*font)["weight"].value<std::string>()) {
       out_config.ui_font.weight = ParseFontWeight(*weight);
     }
-    if (auto lh = (*font)["line_height"].value<double>()) {
+    auto lhNode = (*font)["line_height"];
+    if (auto lh = lhNode.value<double>()) {
       out_config.ui_font.line_height = static_cast<float>(*lh);
+    } else if (auto lh_i = lhNode.value<int64_t>()) {
+      out_config.ui_font.line_height = static_cast<float>(*lh_i);
     }
   }
 

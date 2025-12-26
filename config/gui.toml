@@ -1,25 +1,18 @@
-# ARCANEE GUI Configuration [REQ-90]
-# This file controls the IDE user interface appearance.
-# Changes apply on save (hot-apply). [REQ-91]
-
-# UI Font settings [REQ-92]
-# Fonts are resolved from system-installed fonts only (no file paths).
 [ui_font]
 family = "Inter"
-size_px = 14
+size_px = 18.0
 weight = "Regular"
-line_height = 1.0
+style = "Normal"
+line_height = 1.2
 
-# Dock and window metrics
 [metrics]
-title_bar_height_px = 0     # 0 = auto/default
-menu_bar_height_px = 0      # 0 = auto/default
-dock_padding_px = 6
-window_rounding_px = 6
-scrollbar_size_px = 14
+title_bar_height_px = 30.0
+menu_bar_height_px = 24.0
+dock_padding_px = 0.0
+window_rounding_px = 0.0
+scrollbar_size_px = 12.0
 
-# Behavior settings
 [behavior]
-remember_layout = true      # Remember window positions on restart
-show_fps = false            # Show FPS counter in corner
-dpi_scale = 0               # 0 = auto-detect from system
+remember_layout = true
+show_fps = false
+dpi_scale = 1.0

@@ -32,6 +32,11 @@ Status ProjectSystem::OpenRoot(const std::string &path) {
   return ScanDirectory(m_rootPath, m_root);
 }
 
+void ProjectSystem::CloseRoot() {
+  m_rootPath.clear();
+  m_root = FileNode();
+}
+
 void ProjectSystem::Refresh() {
   if (!m_rootPath.empty()) {
     ScanDirectory(m_rootPath, m_root);
