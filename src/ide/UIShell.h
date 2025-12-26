@@ -69,6 +69,12 @@ public:
   // ImGui::CreateContext but before ImGuiImplDiligent initialization [REQ-92]
   static void LoadInitialFonts();
 
+  // Check if fonts need rebuild (call before NewFrame)
+  bool NeedsFontRebuild() const { return m_fontNeedsRebuild; }
+
+  // Rebuild fonts - must be called BEFORE NewFrame() [REQ-92]
+  void RebuildFontsIfNeeded();
+
   // Accessor
   MainThreadQueue &Queue() { return m_queue; }
 
@@ -163,6 +169,10 @@ public:
     m_getScriptEngineFn = std::move(fn);
   }
 
+  void SetFontRebuildFn(std::function<void()> fn) {
+    m_fontRebuildFn = std::move(fn);
+  }
+
 private:
   // Persistence
   void LoadLayout();
@@ -210,9 +220,10 @@ private:
 
   // Font Locator [REQ-92]
   std::unique_ptr<platform::FontLocator> m_fontLocator;
-  bool m_fontNeedsRebuild = true;
+  bool m_fontNeedsRebuild = false;
   config::FontSpec m_currentEditorFont;
   config::FontSpec m_currentUiFont;
+  std::function<void()> m_fontRebuildFn;
 };
 
 } // namespace arcanee::ide

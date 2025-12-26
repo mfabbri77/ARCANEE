@@ -10,7 +10,7 @@ active = "ayu-mirage"
 # Fonts are resolved from system-installed fonts only (no file paths).
 [font]
 family = "JetBrains Mono"
-size_px = 20
+size_px = 14
 weight = "Regular"   # Light | Regular | Medium | SemiBold | Bold
 style = "Normal"     # Normal | Italic
 line_height = 1.1

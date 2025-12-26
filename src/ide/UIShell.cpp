@@ -208,21 +208,84 @@ void UIShell::LoadInitialFonts() {
   }
 }
 
+// Font hot-reload - MUST be called BEFORE NewFrame() [REQ-92]
+void UIShell::RebuildFontsIfNeeded() {
+  if (!m_fontNeedsRebuild || !m_fontLocator) {
+    return;
+  }
+  m_fontNeedsRebuild = false;
+
+  // Drain queue first to process any pending config changes
+  m_queue.DrainAll();
+
+  ImGuiIO &io = ImGui::GetIO();
+  io.Fonts->Clear();
+
+  bool fontLoaded = false;
+
+  // Load editor font (becomes default)
+  if (!m_currentEditorFont.family.empty() &&
+      m_currentEditorFont.family != "monospace") {
+    std::string path = m_fontLocator->GetFontPath(m_currentEditorFont.family,
+                                                  m_currentEditorFont.weight,
+                                                  m_currentEditorFont.style);
+    if (!path.empty()) {
+      float size =
+          m_currentEditorFont.size_px > 0 ? m_currentEditorFont.size_px : 14.0f;
+      if (io.Fonts->AddFontFromFileTTF(path.c_str(), size)) {
+        spdlog::info("[UIShell] Hot-reloaded editor font: {} ({}px)",
+                     m_currentEditorFont.family, size);
+        fontLoaded = true;
+      }
+    }
+  }
+
+  // Load UI font
+  if (!m_currentUiFont.family.empty() &&
+      m_currentUiFont.family != "sans-serif") {
+    std::string path = m_fontLocator->GetFontPath(
+        m_currentUiFont.family, m_currentUiFont.weight, m_currentUiFont.style);
+    if (!path.empty()) {
+      float size =
+          m_currentUiFont.size_px > 0 ? m_currentUiFont.size_px : 14.0f;
+      if (io.Fonts->AddFontFromFileTTF(path.c_str(), size)) {
+        spdlog::info("[UIShell] Hot-reloaded UI font: {} ({}px)",
+                     m_currentUiFont.family, size);
+        fontLoaded = true;
+      }
+    }
+  }
+
+  if (!fontLoaded) {
+    io.Fonts->AddFontDefault();
+  }
+
+  // Build the font atlas
+  io.Fonts->Build();
+
+  // Set default font to first loaded font (old pointers are now invalid)
+  if (io.Fonts->Fonts.Size > 0) {
+    io.FontDefault = io.Fonts->Fonts[0];
+  }
+
+  // Force texture data to be ready (some backends need this)
+  unsigned char *pixels = nullptr;
+  int width = 0, height = 0;
+  io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+  spdlog::info("[UIShell] Font atlas texture: {}x{} pixels", width, height);
+
+  // Notify Workbench to update GPU texture
+  if (m_fontRebuildFn) {
+    m_fontRebuildFn();
+    spdlog::info("[UIShell] Font atlas rebuilt and texture updated");
+  }
+}
 void UIShell::RenderFrame() {
   // 1. Drain Queue (Apply mutations)
   m_queue.DrainAll();
 
-  // 1a. Font hot-reload is complex with Diligent ImGui backend [REQ-92]
-  // The graphics backend must recreate the font atlas texture after
-  // Clear()/Build(). For now, log that font changes require restart.
-  if (m_fontNeedsRebuild && m_fontLocator) {
-    m_fontNeedsRebuild = false;
-    spdlog::info("[UIShell] Font configuration changed. Restart required for "
-                 "new fonts.");
-    // TODO: Implement proper font hot-reload with Diligent ImGui backend
-    // notification This requires calling the
-    // ImGuiImplDiligent_InvalidateDeviceObjects/CreateDeviceObjects
-  }
+  // Note: Font hot-reload is handled by RebuildFontsIfNeeded() called from
+  // Workbench BEFORE NewFrame() to avoid "Font atlas locked" assertion
 
   // 1b. Global Debug Keybindings
   {

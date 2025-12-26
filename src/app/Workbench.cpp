@@ -184,6 +184,16 @@ bool Workbench::initialize(render::RenderDevice *device,
     return nullptr;
   });
 
+  // Font hot-reload callback [REQ-92]
+  // When UIShell rebuilds the font atlas, recreate GPU resources
+  m_uiShell->SetFontRebuildFn([this]() {
+    if (m_impl->pImguiDiligent) {
+      // Use UpdateFontsTexture to upload new font atlas to GPU
+      m_impl->pImguiDiligent->UpdateFontsTexture();
+      LOG_INFO("Workbench: Font texture updated via hot-reload");
+    }
+  });
+
   LOG_INFO("Workbench: UIShell initialized with preview callbacks");
 #endif
 
@@ -230,6 +240,14 @@ void Workbench::update(double dt) {
 
   // For now, let's assume we can get dims from somewhere or allow ImguiImplSDL
   // to handle input. ImguiImplDiligent only handles rendering mostly.
+
+#ifdef ARCANEE_ENABLE_IDE
+  // Font hot-reload MUST happen BEFORE NewFrame() to avoid locked atlas
+  // [REQ-92]
+  if (m_uiShell) {
+    m_uiShell->RebuildFontsIfNeeded();
+  }
+#endif
 
   // Update ImGui SDL Backend
   ImGui_ImplSDL2_NewFrame();
