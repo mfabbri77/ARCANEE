@@ -78,9 +78,17 @@ UIShell::UIShell(MainThreadQueue &queue) : m_queue(queue) {
              snapshot->gui.ui_font.size_px != m_currentUiFont.size_px);
 
         if (editorChanged || uiChanged) {
+          spdlog::info(
+              "[UIShell] Config font change detected: Editor: {}px -> {}px",
+              m_currentEditorFont.size_px, snapshot->editor.font.size_px);
           m_fontNeedsRebuild = true;
           m_currentEditorFont = snapshot->editor.font;
           m_currentUiFont = snapshot->gui.ui_font;
+        } else {
+          spdlog::info("[UIShell] Config applied but no font change detected "
+                       "(Snapshot: {}px, Current: {}px)",
+                       snapshot->editor.font.size_px,
+                       m_currentEditorFont.size_px);
         }
       }
 
@@ -209,17 +217,44 @@ void UIShell::LoadInitialFonts() {
 }
 
 // Font hot-reload - MUST be called BEFORE NewFrame() [REQ-92]
+// Font hot-reload - MUST be called BEFORE NewFrame() [REQ-92]
 void UIShell::RebuildFontsIfNeeded() {
+  m_queue.DrainAll();
+
+  ImGuiIO &io = ImGui::GetIO();
+
+  // Optimize for High-DPI [REQ-DPI]
+  float scaleFactor = io.DisplayFramebufferScale.y;
+  if (scaleFactor <= 0.0f)
+    scaleFactor = 1.0f;
+
+  // Forced Supersampling: Always render at least 1.5x for sharpness [FIX-BLUR]
+  if (scaleFactor < 1.5f)
+    scaleFactor = 1.5f;
+
+  // Check if DPI changed - trigger rebuild if so
+  if (std::abs(scaleFactor - m_lastScaleFactor) > 0.001f) {
+    m_fontNeedsRebuild = true;
+  }
+  m_lastScaleFactor = scaleFactor;
+
   if (!m_fontNeedsRebuild || !m_fontLocator) {
     return;
   }
   m_fontNeedsRebuild = false;
 
-  // Drain queue first to process any pending config changes
-  m_queue.DrainAll();
+  io.FontGlobalScale = 1.0f / scaleFactor;
 
-  ImGuiIO &io = ImGui::GetIO();
+  // Force clear texture ID to ensure backend knows it's invalid
   io.Fonts->Clear();
+  io.Fonts->TexID = nullptr;
+
+  ImFontConfig fontConfig;
+  fontConfig.OversampleH =
+      2; // Reduced oversample as we are scaling native size
+  fontConfig.OversampleV = 1;
+  fontConfig.PixelSnapH = true;
+  fontConfig.SizePixels = 0.0f; // Will be set per font
 
   bool fontLoaded = false;
 
@@ -230,11 +265,15 @@ void UIShell::RebuildFontsIfNeeded() {
                                                   m_currentEditorFont.weight,
                                                   m_currentEditorFont.style);
     if (!path.empty()) {
-      float size =
+      float baseSize =
           m_currentEditorFont.size_px > 0 ? m_currentEditorFont.size_px : 14.0f;
-      if (io.Fonts->AddFontFromFileTTF(path.c_str(), size)) {
-        spdlog::info("[UIShell] Hot-reloaded editor font: {} ({}px)",
-                     m_currentEditorFont.family, size);
+      float loadSize = baseSize * scaleFactor;
+
+      if (io.Fonts->AddFontFromFileTTF(path.c_str(), loadSize, &fontConfig)) {
+        spdlog::info("[UIShell] Hot-reloaded editor font: {} ({}px, "
+                     "scale={:.1f}) -> load {:.1f}px",
+                     m_currentEditorFont.family, baseSize, scaleFactor,
+                     loadSize);
         fontLoaded = true;
       }
     }
@@ -246,18 +285,23 @@ void UIShell::RebuildFontsIfNeeded() {
     std::string path = m_fontLocator->GetFontPath(
         m_currentUiFont.family, m_currentUiFont.weight, m_currentUiFont.style);
     if (!path.empty()) {
-      float size =
+      float baseSize =
           m_currentUiFont.size_px > 0 ? m_currentUiFont.size_px : 14.0f;
-      if (io.Fonts->AddFontFromFileTTF(path.c_str(), size)) {
-        spdlog::info("[UIShell] Hot-reloaded UI font: {} ({}px)",
-                     m_currentUiFont.family, size);
+      float loadSize = baseSize * scaleFactor;
+
+      if (io.Fonts->AddFontFromFileTTF(path.c_str(), loadSize, &fontConfig)) {
+        spdlog::info("[UIShell] Hot-reloaded UI font: {} ({}px, scale={:.1f}) "
+                     "-> load {:.1f}px",
+                     m_currentUiFont.family, baseSize, scaleFactor, loadSize);
         fontLoaded = true;
       }
     }
   }
 
   if (!fontLoaded) {
-    io.Fonts->AddFontDefault();
+    ImFontConfig defConfig = fontConfig;
+    defConfig.SizePixels = 13.0f * scaleFactor;
+    io.Fonts->AddFontDefault(&defConfig);
   }
 
   // Build the font atlas
@@ -337,6 +381,13 @@ void UIShell::RenderFrame() {
         if (m_pauseRuntimeFn)
           m_pauseRuntimeFn();
       }
+    }
+
+    // Ctrl+S: Save
+    if (ImGui::IsKeyPressed(ImGuiKey_S) && ctrl && !shift) {
+      Document *doc = m_documentSystem.GetActiveDocument();
+      if (doc)
+        m_documentSystem.SaveDocument(doc);
     }
 
     // F9: Toggle Breakpoint at cursor

@@ -18,12 +18,23 @@ namespace arcanee::ide::config {
 // -----------------------------------------------------------------------------
 ConfigSystem::ConfigSystem(const ConfigSystemInit &init) : m_init(init) {}
 
-ConfigSystem::~ConfigSystem() = default;
+ConfigSystem::~ConfigSystem() {
+  m_watcherRunning = false;
+  if (m_watcherThread.joinable()) {
+    m_watcherThread.join();
+  }
+}
 
 // -----------------------------------------------------------------------------
 // Initialize - discover config root and load all configs [REQ-90]
 // -----------------------------------------------------------------------------
 void ConfigSystem::Initialize() {
+  spdlog::info("[ConfigSystem] Initialized");
+
+  // Start watcher thread [REQ-HOTRELOAD]
+  m_watcherRunning = true;
+  m_watcherThread = std::thread(&ConfigSystem::WatcherLoop, this);
+
   DiscoverConfigRoot();
   LoadAllConfigs();
 }
@@ -208,10 +219,9 @@ void ConfigSystem::DebouncedReload() {
       std::this_thread::sleep_for(std::chrono::milliseconds(kDebounceMs));
       m_debounceScheduled = false;
 
-      // Check if this is still the latest request
-      if (seq == m_reloadSeq.load()) {
-        PerformReload(seq);
-      }
+      // Always perform reload for the LATEST sequence at the end of the wait
+      // This ensures we catch any updates that happened while sleeping
+      PerformReload(m_reloadSeq.load());
     });
   } else {
     // Synchronous fallback
@@ -417,6 +427,46 @@ bool ConfigSystem::ReadFileContent(const std::string &path,
   }
 
   return true;
+}
+
+// -----------------------------------------------------------------------------
+// Watcher Loop - Poll for file changes [REQ-HOTRELOAD]
+// -----------------------------------------------------------------------------
+void ConfigSystem::WatcherLoop() {
+  while (m_watcherRunning) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    std::vector<std::string> changedFiles;
+    {
+      std::lock_guard<std::mutex> lock(m_watcherMutex);
+      for (auto &[path, lastTime] : m_fileTimestamps) {
+        std::error_code ec;
+        auto currentTime = fs::last_write_time(path, ec);
+        if (!ec && currentTime > lastTime) {
+          lastTime = currentTime;
+          changedFiles.push_back(path);
+        }
+      }
+    }
+
+    if (!changedFiles.empty()) {
+      spdlog::info("[ConfigSystem] Detected external changes in {} files",
+                   changedFiles.size());
+      DebouncedReload();
+    }
+  }
+}
+
+void ConfigSystem::UpdateWatchedFiles(const std::vector<std::string> &files) {
+  std::lock_guard<std::mutex> lock(m_watcherMutex);
+  m_fileTimestamps.clear();
+  for (const auto &file : files) {
+    std::error_code ec;
+    auto time = fs::last_write_time(file, ec);
+    if (!ec) {
+      m_fileTimestamps[file] = time;
+    }
+  }
 }
 
 } // namespace arcanee::ide::config

@@ -5,10 +5,13 @@
 #pragma once
 #include "ConfigSnapshot.h"
 #include <atomic>
+#include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace arcanee::ide::config {
@@ -87,6 +90,15 @@ private:
   // Debounce
   static constexpr int kDebounceMs = 200;
   std::atomic<bool> m_debounceScheduled{false};
+
+  // File Watching [REQ-HOTRELOAD]
+  std::thread m_watcherThread;
+  std::atomic<bool> m_watcherRunning{false};
+  std::mutex m_watcherMutex;
+  std::map<std::string, std::filesystem::file_time_type> m_fileTimestamps;
+
+  void WatcherLoop();
+  void UpdateWatchedFiles(const std::vector<std::string> &files);
 
   // Diagnostics per file
   std::mutex m_diagMutex;

@@ -275,8 +275,16 @@ bool ConfigSchema::ParseEditorConfig(const std::string &toml_content,
         out_config.font.family = *family;
       }
     }
-    if (auto size = (*font)["size_px"].value<double>()) {
-      out_config.font.size_px = static_cast<float>(*size);
+    auto valNode = (*font)["size_px"];
+    if (auto d = valNode.value<double>()) {
+      out_config.font.size_px = static_cast<float>(*d);
+    } else if (auto i = valNode.value<int64_t>()) {
+      out_config.font.size_px = static_cast<float>(*i);
+    } else if (auto s = valNode.value<std::string>()) {
+      try {
+        out_config.font.size_px = std::stof(*s);
+      } catch (...) {
+      }
     }
     if (auto weight = (*font)["weight"].value<std::string>()) {
       out_config.font.weight = ParseFontWeight(*weight);

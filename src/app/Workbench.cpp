@@ -188,9 +188,12 @@ bool Workbench::initialize(render::RenderDevice *device,
   // When UIShell rebuilds the font atlas, recreate GPU resources
   m_uiShell->SetFontRebuildFn([this]() {
     if (m_impl->pImguiDiligent) {
-      // Use UpdateFontsTexture to upload new font atlas to GPU
-      m_impl->pImguiDiligent->UpdateFontsTexture();
-      LOG_INFO("Workbench: Font texture updated via hot-reload");
+      // Use Invalidate/Create to force full recreation of font texture and SRV
+      // This works around potential issues with UpdateFontsTexture not updating
+      // TexID
+      m_impl->pImguiDiligent->InvalidateDeviceObjects();
+      m_impl->pImguiDiligent->CreateDeviceObjects();
+      LOG_INFO("Workbench: Font texture recreated via Invalidate/Create");
     }
   });
 

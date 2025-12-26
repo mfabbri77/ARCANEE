@@ -223,6 +223,7 @@ private:
   bool m_fontNeedsRebuild = false;
   config::FontSpec m_currentEditorFont;
   config::FontSpec m_currentUiFont;
+  float m_lastScaleFactor = 1.0f;
   std::function<void()> m_fontRebuildFn;
 };
 
