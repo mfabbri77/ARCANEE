@@ -1,172 +1,144 @@
-# Upgrade Intake — “Full IDE” for Fantasy Console (IDE-only)
-
-## 0) Snapshot
-- **Repo:** ARCANEE
-- **Current Blueprint:** `blueprint_v0.1_ch0..ch9.md` (repo version `0.1.0`)
-- **Intake Type:** Mode (C) — conforming ZIP + vNEXT delta
-- **Date (Europe/Rome):** 2025-12-24
-- **Proposed Change Request:** [CR-0043] (next available ID after examples already present in `/blueprint/knowledge/`)
+# Upgrade Intake — ARCANEE v0.2 → v0.3 (proposed)
+Feature: TOML-based configuration system (Editor + ImGui Dock GUI), unified theming, Tree-sitter TOML + Squirrel, keybindings in TOML, hot-apply on save.
 
 ---
 
-## 1) Observed Facts (from repo)
-### 1.1 Repository & build
-- Existing build is CMake + presets (`CMakePresets.json`) with a Ninja-first posture; repo targets Linux/Windows/macOS per [REQ-17], toolchain baselines per [REQ-52].
-- Dependency fetching is currently via CMake `FetchContent` (not vcpkg/conan manifest), with DiligentCore + DiligentTools pinned to `v2.5.5` in root `CMakeLists.txt`. This matches the “pinned deps” intent in [REQ-61] but the governance mechanism is “FetchContent pins” rather than a package manager.
-- Tooling scripts exist under `/tools/ci/` including `check_no_temp_dbg.py` (supports [TEMP-DBG] enforcement intent).
-
-### 1.2 Current Workbench (“minimal editor”)
-- A Workbench exists and is part of the product scope ([REQ-01], [REQ-28], Ch8).
-- Current Workbench UI implementation is in `src/app/Workbench.{h,cpp}` and uses:
-  - ImGui headers + SDL backend (`imgui_impl_sdl.h`) and Diligent’s ImGui integration (via DiligentTools).
-  - The editor is currently an `InputTextMultiline`-style string buffer (no multi-cursor, no undo tree, no workspace search, no tree-sitter, no LSP/DAP).
-  - Windows currently used are “Project Browser”, “Code Editor”, “Log Console” (no docking layout / no classic panes yet).
-- Workbench requirements in v0.1 include “code editor (minimum)”, “basic debugger (minimum viable)”, and profiler overlay ([REQ-28], [REQ-58], [REQ-59]) with smoke tests ([TEST-09], [TEST-24], [TEST-25]).
-
-### 1.3 Runtime/Preview integration
-- Workbench initialization already receives `RenderDevice`, `Window`, and `Runtime*`, so embedding the existing runtime view as an IDE Preview panel appears structurally feasible without adding new runtime features (aligns with the delta constraint: IDE-only).
-
----
-
-## 2) Compliance Snapshot (v0.1 repo health vs blueprint conventions)
-### 2.1 Mode-C predicates (repo readiness)
-- `/blueprint/` exists and contains:
-  - `blueprint_v0.1_ch0..ch9.md`, `decision_log.md`, `walkthrough.md`, `implementation_checklist.yaml`, `/blueprint/knowledge/`, `/blueprint/cr/` ✅
-- `/src/` exists and is non-empty; root `CMakeLists.txt` exists ✅
-- Therefore: qualifies for Mode (C) “upgrade” flow.
-
-### 2.2 Notable compliance considerations (to keep stable during vNEXT)
-- **IDs:** Existing IDs run up to:
-  - Requirements: max seen `[REQ-62]`
-  - Decisions: max seen `[DEC-26]`
-  - Tests: max seen `[TEST-26]`
-  - Build: max seen `[BUILD-06]`
-  - Architecture: max seen `[ARCH-10]`
-  - Concurrency: max seen `[CONC-03]`
-  - Memory: max seen `[MEM-02]`
-  - Versioning: max seen `[VER-09]`
-- **Public API:** `/include/` is absent; this is consistent with existing decision [DEC-19] (v1.0 is app-first; SDK optional).
-- **TEMP-DBG enforcement:** script exists; confirm CI wiring in vNEXT when IDE work introduces heavy churn (must keep “no TEMP-DBG” gate effective).
-- **Known risk:** The upcoming “Full IDE” feature is a large change to Tooling (Ch8) and will introduce new persistence (Timeline) and new protocol clients (LSP/DAP); these must be reflected in vNEXT blueprint + gates.
+## 1) Observed Facts (Repo Snapshot)
+- [META-01] Repo: `ARCANEE` (ZIP import), CMake-based native app; `/src/` and `/tests/` exist; `/include/` is not present (app-only layout implied).
+- [META-02] Blueprint snapshots present for v0.1 and v0.2: `blueprint_v0.2_ch0..ch9.md`, plus `decision_log.md`, `walkthrough.md`, `implementation_checklist.yaml`, and existing CRs including `[CR-0043]`.
+- [DEC-15] UI stack is Dear ImGui. (Declared in v0.2 Ch0)
+- [DEC-27] ImGui docking branch is enabled via DiligentTools ImGui integration. (Declared in v0.2 Ch8)
+- [DEC-16] Config format is TOML (already chosen). (Declared in v0.2 Ch0)
+- [REQ-69] Tree-sitter is the incremental structural engine for highlight/folding/outline (Squirrel). (Declared in v0.2 Ch1/Ch8)
+- [REQ-75] Settings + keybindings exist in TOML with a **layered** user+project model:
+  - user-level under OS user data dir (platform-resolved)
+  - project-level under `.arcanee/settings.toml` and `.arcanee/keybindings.toml`
+  - unknown keys preserved for forward compatibility. (Declared in v0.2 Ch8)
+- [REQ-80] Diagnostics display includes editor underlines + gutter markers + Problems list pane. (Declared in v0.2 Ch8)
+- [VER-12] TOML schema evolution rules exist (unknown keys preserved; removals/renames require deprecation/migration). (Declared in v0.2 Ch9)
+- [BUILD-..] CMake uses FetchContent to bring in dependencies including `tree-sitter`, `tree-sitter-squirrel`, and `tomlplusplus` (observed in `CMakeLists.txt`). Pinning strategy needs explicit verification against dependency governance requirements.
+- [REQ-02] Observability policy exists in the normative bundle; repo contains logging plumbing (`src/common/Log.h` observed). Some sources (e.g., IDE ParseService) currently print to `std::cerr`, which should be aligned to the approved logging path in future changes.
+- [META-03] Tree-sitter Squirrel highlight query assets exist under `assets/ide/treesitter/squirrel/queries/*.scm`. There is no TOML grammar/query asset observed yet.
 
 ---
 
-## 3) Delta Summary — vNEXT proposal (“Full IDE”, IDE-only)
-### 3.1 User-facing delta (requested)
-Add a boot-to-IDE, classic pane IDE (Files left, Editor center, Preview right, Console bottom) built entirely on Dear ImGui docking branch, with:
-- Project Explorer + Symbols/Outline + Command Palette + Breadcrumbs.
-- Editor with multi-cursor, column selection, undo tree, file and workspace search/replace (PCRE2), tree-sitter incremental highlight/folding/outline with Squirrel grammar and query files.
-- Preview panel embedding the existing runtime view (no new runtime features) with Run/Stop/Restart and optional “Restart on save”.
-- Console bottom tabs: logs, task output (problem matchers), optional REPL, debug console.
-- Protocol clients: DAP (debugger UI) and optional LSP client.
-- Local Timeline history with automatic snapshots + restore + diff, stored in SQLite + zstd + xxHash.
-- Settings + keybinding editor UI; TOML layered (user + project), layout persistence.
-
-### 3.2 Reserved new Blueprint IDs for vNEXT (proposed; to be formally introduced in [CR-0043])
-> These are **reservations** to avoid renumbering drift. Final wording will land in vNEXT blueprint chapters + decision logs.
-
-#### Requirements (new)
-- [REQ-63] IDE boots directly into a **dockspace** with classic panes (Files/Editor/Preview/Console) and persistent layout.
-- [REQ-64] Project Explorer: file tree, filters, create/rename/delete, recent files.
-- [REQ-65] Command Palette: unified action entry point (open file/symbol, tasks, layout toggles, snapshots, debug controls).
-- [REQ-66] Breadcrumb bar: project ▸ folder ▸ file navigation.
-- [REQ-67] Editor core: multi-cursor, column selection, undo/redo (undo tree), find/replace in file.
-- [REQ-68] Workspace search/replace: regex (PCRE2), streaming results, previewed replace, cancellable.
-- [REQ-69] ParseService: tree-sitter incremental parse + query-based highlight/locals/injections, syntax folding + outline for Squirrel.
-- [REQ-70] Preview panel embeds existing runtime view with Run/Stop/Restart + optional Restart-on-save; no new runtime features.
-- [REQ-71] Console & Tasks: log console + task output with problem matchers (file:line), optional REPL, debug console.
-- [REQ-72] DAP client: breakpoints/call stack/variables/watches + debug console using JSON messages.
-- [REQ-73] LSP client (optional, architected): JSON-RPC semantic features (diagnostics, goto/refs/rename/format optional).
-- [REQ-74] Timeline: automatic + manual snapshots, restore, diff; SQLite metadata + zstd blobs keyed by xxHash.
-- [REQ-75] Settings + keybindings: layered TOML (user + project), keybinding UI with conflict detection and context scoping; persist open files + cursor + docking layout.
-- [REQ-76] Performance & responsiveness: UI thread does render/input only; parse/search/snapshot/protocol I/O are background with cancellability and main-thread apply queue.
-
-#### Architecture (new)
-- [ARCH-11] Tooling/IDE subsystem decomposition: UIShell, ProjectSystem, DocumentSystem, TextBuffer, ParseService, SearchService, TaskRunner, TimelineStore, LspClient, DapClient with explicit ownership and threading.
-
-#### Decisions (new; candidates)
-- [DEC-27] ImGui **docking branch** + multi-viewport policy and how it is integrated (via DiligentTools fork vs direct ImGui submodule vs FetchContent).
-- [DEC-28] TextBuffer internal data structure (piece-table vs rope vs gap-buffer hybrid) + undo tree representation and perf tests.
-- [DEC-29] Timeline retention + storage layout + encryption/no-encryption policy (local data) + crash consistency.
-- [DEC-30] LSP server discovery/config model (project TOML config; per-language; lifecycle; sandbox constraints).
-- [DEC-31] DAP transport + adapter discovery/config + “at least one adapter” compliance strategy (real external adapter vs shipped mock adapter tool).
-- [DEC-32] Task execution sandbox model (cwd/env/path allowlist; problem matcher configuration; Windows quoting rules).
-
-#### Build (new)
-- [BUILD-07] Add and pin new dependencies: tree-sitter(+grammar), PCRE2, SQLite, zstd, xxHash, tomlplusplus, nlohmann/json, spdlog (if not already present as a pinned dep), and integrate them consistently across platforms.
-
-#### Tests (new)
-- [TEST-27] IDE boot smoke: dock layout created, panes present, layout persistence roundtrip.
-- [TEST-28] TextBuffer correctness: multi-cursor + column selection + undo tree invariants across randomized edit sequences.
-- [TEST-29] SearchService: PCRE2 regex search streaming + cancel correctness; replace preview correctness.
-- [TEST-30] ParseService: incremental tree-sitter updates preserve highlight spans + outline stability across edits (golden tests).
-- [TEST-31] TimelineStore: snapshot/restore/diff correctness + zstd/xxHash dedup hit-rate sanity.
-- [TEST-32] TaskRunner: capture stdout/stderr, problem matcher detects file:line and emits clickable diagnostics model.
-- [TEST-33] DAP client: connect/handshake/stack/vars flow against a deterministic test adapter.
-- [TEST-34] Settings/keybindings: layered TOML merge + keybinding conflict detection rules.
+## 2) Compliance Snapshot (Mode C Readiness)
+- [VER-11] Mode C discipline is referenced in v0.2 governance text (upgrade via CR + delta-only edits + `decision_delta_log.md`), but `decision_delta_log.md` is not present in the repo snapshot. This upgrade will introduce it as part of v0.3 artifacts.
+- [BUILD-01] CI/quality gate scripts exist under `tools/ci/` including checks for:
+  - no `[TEMP-DBG]`
+  - no `N/A` without `[DEC-XX]`
+  - every `[REQ]` has ≥1 `[TEST]` + checklist reference
+  - inherit-target correctness.
+- [BUILD-02] Dependency pinning and reproducibility needs explicit confirmation:
+  - FetchContent repos appear referenced by URL; whether commits/tags are pinned must be verified and, if not pinned, addressed via governance (either in this CR or a follow-up CR).
+- [ARCH-01] Repo layout deviates from the “library + public include” convention (no `/include/<proj>/`). If the project is intentionally app-only, this is acceptable but must remain explicit and enforced by blueprint decisions/tests.
 
 ---
 
-## 4) Impact Matrix (what changes where)
-| Area | Existing v0.1 | vNEXT delta | Risk/Notes |
-|---|---|---|---|
-| UI shell | Simple ImGui windows | Full dockspace + multi-viewport + command palette | Layout persistence + focus/shortcut routing complexity |
-| Editor | String-based multiline editor | New TextBuffer + multi-cursor + undo tree + find/replace | Requires correctness/perf tests; large rewrite |
-| Parsing/highlight | Best-effort (minimal) | tree-sitter incremental parse + query-based highlight/folding/outline | New deps + query assets + incremental edit plumbing |
-| Search | In-file only (basic) | Workspace search/replace with PCRE2 streaming + cancel | Requires concurrency + cancellation correctness |
-| Preview | Workbench interacts with runtime | Embed existing runtime view as preview pane | Must not add runtime features; just host/controls |
-| Console | Log console | Task output, problem matchers, optional REPL, debug console | Regex matchers need configuration and tests |
-| Debug | MVP debugger in Ch8 | DAP client UI + protocol manager | Must define adapter strategy and testing |
-| History | None | Timeline snapshots with SQLite+zstd+xxHash + diff | Persistence schema + storage location decisions |
-| Settings | Ad-hoc | TOML layered + keybinding editor + layout persistence | UX + schema evolution policy needed |
+## 3) Delta Summary (Requested Change vs v0.2)
+This feature request expands and concretizes existing settings/keybinding direction ([REQ-75], [VER-12]) with:
+- New **file-based configuration folder** (`config/`) and file split:
+  - `config/color-schemes.toml`
+  - `config/editor.toml`
+  - `config/gui.toml`
+  - `config/keys.toml`
+- **Hot-apply on save** for all `config/*.toml` files with debouncing; non-fatal validation; per-field fallback.
+- **Unified theming**: one active scheme drives editor UI colors, syntax token colors, and the full ImGui style.
+- **Tree-sitter highlighting additions**:
+  - `.nut` (Squirrel) highlighting (already in scope; must be confirmed as `.nut` mapping exists)
+  - `.toml` highlighting via Tree-sitter TOML grammar + highlight queries.
+- **Config editing inside the IDE**:
+  - new “Configuration” menu
+  - open/edit config folder via the IDE file explorer
+  - Problems window diagnostics for parse/validation problems with line/column.
+- **System-font-only enforcement** for editor and UI fonts (no font file paths accepted).
+- Keybindings centralized in TOML with deterministic conflict resolution (last definition wins) + platform abstraction (`primary`).
 
 ---
 
-## 5) Gaps / Risks (to be resolved via Sharp Questions or vNEXT decisions)
-- **DAP adapter requirement ambiguity:** “Working against at least one adapter” can mean “external adapter installed on system” or “adapter shipped with repo as /tools”. This impacts DoD, CI, and user setup. (Targets [DEC-31], [TEST-33].)
-- **ImGui docking branch integration:** Current ImGui appears sourced via DiligentTools; docking branch requirement may necessitate switching integration strategy or ensuring Diligent’s ImGui is docking-enabled. (Targets [DEC-27], [BUILD-07].)
-- **Tree-sitter grammar & query assets:** Need a clear source/version pin for `tree-sitter-squirrel` and query file locations inside the repo. (Targets [REQ-69], [BUILD-07], [TEST-30].)
-- **Project model & tasks TOML:** Need a canonical workspace root definition, ignore rules, and where tasks/settings live. (Targets [REQ-64], [REQ-71], [REQ-75], [DEC-32].)
-- **Timeline privacy/security:** Snapshot content may include secrets. Need policy for storage location, retention, and whether to exclude files/patterns. (Targets [DEC-29].)
-- **Performance budgets for IDE:** Without budgets, regression gates may be weak. Need at least “typing latency” and “search responsiveness” targets. (Targets [REQ-76].)
+## 4) Impact Matrix (What Changes, Where)
+| Area | Primary Modules (expected) | Impact | Notes |
+|---|---|---:|---|
+| Config loader + schema validation | new `ConfigSystem` + TOML parsing/validation layer | High | Must provide per-field fallback + structured diagnostics. |
+| IDE file explorer + menu | `UIShell` / menu wiring | Medium | Adds “Configuration” menu & scoped explorer root. |
+| Problems diagnostics | existing diagnostics pipeline / Problems pane | High | Must map TOML parse + validation issues to file/range. |
+| Theming | editor theme + ImGui style mapping | High | “Scheme is source of truth” across editor + GUI. |
+| Tree-sitter highlighting | ParseService/highlight pipeline + assets | High | Add TOML grammar + queries; stable capture→token mapping. |
+| Fonts | font selection/atlas rebuild | High | System font matching only; safe fallback on failure. |
+| Keybindings | keybinding manager + action registry | Medium | New file shape + conflict rules + `primary` abstraction. |
+| Build/deps | CMake deps for TOML TS grammar | Medium | Add tree-sitter-toml grammar dependency and assets. |
 
 ---
 
-## 6) Sharp Questions (answer in next turn; all are blocking unless we assume defaults)
-1. **Target vNEXT version:** Should we target `v0.2.0` for this feature set (MINOR bump from `0.1.0`), or do you want a different SemVer plan for pre-1.0?
-v0.2.0
+## 5) Gaps / Risks
+- [META-09] **Settings model conflict risk**: v0.2 defines layered user+project TOML files ([REQ-75]); the request introduces a `config/` folder and a different precedence order. Requires an explicit migration/compatibility decision and test gates.
+- [META-10] **Font discovery is platform-specific**: “system fonts only” implies enumerating/matching families across Windows/macOS/Linux and mapping weight/style; requires explicit dependency/tooling choice and graceful degradation.
+- [META-11] **Hot-apply safety**: applying changes on save touches theme, keymaps, and font resources. Must be thread-safe relative to editor render loop and background services; failed font rebuild must keep last-known-good resources.
+- [META-12] **Diagnostics with accurate ranges**: toml parser must expose line/column offsets; unknown keys and invalid values must still report usable ranges (or best-effort file-level diagnostics).
+- [META-13] **Token taxonomy stability**: Tree-sitter captures vary by grammar; IDE-owned stable token set and capture→token mapping must be versioned and tested to avoid drift.
+- [META-14] **Dependency governance**: adding tree-sitter TOML grammar and potentially font backends may increase dependency surface; must remain pinned and reproducible.
 
-2. **ImGui source of truth:** Must ImGui docking come from:
-   - (A) DiligentTools’ ImGui integration (if docking-enabled), OR
-   - (B) a direct ImGui docking branch dependency we integrate ourselves (and then bridge to Diligent), OR
-   - (C) something else already present in the repo?
-A
+---
 
-3. **Workspace root & project format:** What is the canonical project/workspace structure?
-   - Is a “project” simply a folder under `samples/` today, and do we keep that, or introduce `.arcanee/` metadata under a chosen root?
-a folder under samples/
+## 6) Proposed New IDs (Reserved for v0.3 Change)
+> Allocation based on current maxima observed in repo snapshot: REQ max=89, DEC max=61, ARCH max=11, API max=16, BUILD max=17, TEST max=38, VER max=17, META max=8.
 
-4. **Tasks TOML location & schema:** Where should tasks live (example: `<workspace>/.arcanee/tasks.toml`) and what minimum schema do you want (name, command, args, cwd, env, problem matcher)?
-`<workspace>/.arcanee/tasks.toml` keep schema as simple as possible for our needs
+### New Requirements (draft)
+- [REQ-90] Add `config/` directory with optional TOML files: `color-schemes.toml`, `editor.toml`, `gui.toml`, `keys.toml`; missing files fall back to built-in defaults.
+- [REQ-91] Hot-apply on save for any `config/*.toml`: parse → validate → apply immediately with debouncing; invalid fields fall back per-field without preventing launch.
+- [REQ-92] System-font-only enforcement: reject/ignore font path keys; editor/gui fonts select by family + (weight/style) with safe fallback.
+- [REQ-93] Unified theming: active scheme is the single source of truth for editor UI colors, syntax token colors, and ImGui style colors (explicit or derived deterministic mapping).
+- [REQ-94] Tree-sitter highlighting for `.nut` and `.toml`, with stable capture→token mapping and prompt re-theme repaint.
+- [REQ-95] IDE “Configuration” menu: open config folder in file explorer (scoped root); optionally create missing config files with commented defaults.
+- [REQ-96] Keybindings in `config/keys.toml`: multiple bindings per action, conflict detection, deterministic resolution (last wins), platform abstraction (`primary`).
+- [REQ-97] Problems-window integration for config errors/warnings: file + range + severity + message + key path; non-fatal behavior.
+- [REQ-98] UTF-8-only TOML IO: reject invalid encoding at IO boundary; surface diagnostics; no encoding option exposed.
 
-5. **DAP “at least one adapter”:** Which adapter should be considered the baseline for DoD?
-   - (A) ship a small deterministic mock adapter under `/tools/` for CI + demo, OR
-   - (B) integrate with a known external adapter (name it), OR
-   - (C) something specific to Squirrel/runtime (even if temporary).
-C
+### New Architecture / API / Decisions (draft)
+- [ARCH-12] Config hot-reload pipeline: file-save event → debounce → parse/validate off-thread → main-thread apply queue (atomic snapshot apply).
+- [API-17] Internal `ConfigSnapshot` contract + per-subsystem apply API (Theme/Fonts/Keymap) with rollback/last-known-good semantics.
+- [DEC-62] Settings precedence & migration policy for `config/` vs existing layered `settings.toml`/`.arcanee/*` (must pick coexist/replace + deprecation path).
+- [DEC-63] GUI theme derivation strategy: derived mapping from editor base colors (MVP) vs explicit `[scheme.gui]` block (optional override).
+- [DEC-64] TOML parser diagnostics strategy: toml++ (already present) vs alternative; must support line/column ranges and non-fatal schema validation.
+- [DEC-65] System font backend strategy per platform (DirectWrite/CoreText/fontconfig) and whether any new dependency is allowed.
 
-6. **LSP scope:** Is LSP required for the DoD milestone, or truly optional/phase-2?
-   - If enabled, which language servers do you want to support first (Squirrel-only, or also others in the workspace)?
-Squirrel only
+### New Tests (draft)
+- [TEST-39] Config parse/validate/apply: per-field fallback, unknown-key warnings, and stable diagnostics ranges for each `config/*.toml`.
+- [TEST-40] Theme unification: changing active scheme updates editor UI + syntax token colors + ImGui style deterministically.
+- [TEST-41] Keybindings: conflict detection + last-wins determinism; `primary` expansion per platform.
+- [TEST-42] Font selection: rejects font paths; family matching fallback; failed atlas rebuild preserves previous valid font.
 
-7. **Timeline retention & exclusions:** Default retention policy (e.g., keep last N snapshots or last X days) and file exclusion rules (e.g., `*.png`, `*.wav`, `build/`, `*.bin`)?
-15 snapshot for scripts and 3 snapshot for other files, exclude temporary (eg: rebuildable artifacts) files. 
+### Versioning
+- [VER-18] Release target: ship as **v0.3.0** (MINOR bump from v0.2.0) with explicit compatibility notes for prior settings/keybindings.
 
-8. **Encoding baseline:** Can we assume UTF-8 for text files (plus `\n`/`\r\n` normalization), or must we support mixed encodings?
-UTF-8 for text files (plus `\n`/`\r\n` normalization)
+---
 
-9. **Keybinding defaults:** Do you want a VSCode-like default map, an Emacs/Vim mode, or a minimal custom set (with later user customization)?
-VSCode-like
+## 7) Sharp Questions (Answers unblock CR + v0.3 blueprint deltas)
+1) [DEC-62] Should `config/` **replace** the existing layered settings/keybindings paths from [REQ-75], or **coexist** (e.g., `config/` = user-level layer, `.arcanee/` = project-level layer)? If coexist, what is the final precedence order?
+Replace, but check what is actually implemented in code. Not just the blueprint.
 
-10. **Non-goals confirmation:** Confirm that runtime/render/audio features must not change for this milestone beyond exposing run/stop/restart controls in the IDE preview.
-confirmed
+2) Where should `config/` live in a packaged app:
+   - beside the executable (repo-root style),
+   - under OS user data dir (current [REQ-75] pattern),
+   - or both with a search order?
+Put config/ in the repo root directory, for now.
+
+3) For “hot-apply on save”, should reload trigger on:
+   - saves performed inside the IDE only,
+   - or also external filesystem modifications (watcher)?
+IDE only.
+
+4) Fonts: do we accept adding platform font discovery backends (DirectWrite/CoreText/fontconfig), or must we rely only on what is already in the repo’s dependency set?
+Load fonts from OS, use the most appropriate platform font discovery backends for this task.
+ 
+5) Keybinding action IDs: do you already have a canonical action registry list to freeze, or should v0.3 define the initial stable set (e.g., `file.save`, `command_palette.open`, `editor.copy`, etc.)?
+v0.3 can define the stable step, but keep what is already defined in v0.2 as base.
+
+6) Color schemes: should built-in reference schemes ship as:
+   - hardcoded defaults only (no files created unless user requests),
+   - or also as a generated `config/color-schemes.toml` template via “New Config File”?
+hardcoded default file `config/color-schemes.toml` that the user can modify
+
+7) `.nut` handling: confirm that Squirrel files are `.nut` in your project conventions (and not another extension), so the file-type routing is correct for Tree-sitter + highlighting.
+I confirm.
+

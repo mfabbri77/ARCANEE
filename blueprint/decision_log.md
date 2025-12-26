@@ -288,4 +288,209 @@ This log is append-only. IDs are stable.
 
 ---
 
+## [DEC-62] Replace layered settings/keybindings model with repo-root `./config/*.toml`
+**Decision**
+v0.3 adopts repo-root `./config/*.toml` and **replaces** the v0.2 blueprint’s layered user/project settings/keybindings paths.
+
+**Rationale**
+Feature request requires a visible `config/` folder and in-IDE editing flow. Code audit indicates the layered model was not implemented in code, only described in blueprint.
+
+**Alternatives**
+- Coexist layers (`config/` + user data dir + `.arcanee/` project): deferred.
+- User-data-dir config only: rejected for MVP.
+
+**Consequences**
+- `config/` becomes the single config source in v0.3.
+- Future multi-layer support requires a dedicated CR + precedence policy + migrations.
+
+**Tests/Gates**
+- [TEST-39], [TEST-43]; CI assets gate for `config/color-schemes.toml` ([BUILD-19]).
+
+---
+
+## [DEC-63] GUI theme mapping strategy: derived MVP with optional overrides
+**Decision**
+ImGui theme colors are derived deterministically from scheme base colors for MVP; optional `[scheme.gui]` overrides may refine specific roles.
+
+**Rationale**
+Reduces authoring burden while satisfying “single source of truth” requirement.
+
+**Alternatives**
+- Require explicit full ImGui color table in every scheme: rejected as too verbose.
+
+**Consequences**
+- Deterministic derived mapping must be stable and regression-tested.
+
+**Tests/Gates**
+- [TEST-40] golden snapshot for derived ImGui style.
+
+---
+
+## [DEC-64] Config parsing: `toml++` + in-house schema/semantic validation
+**Decision**
+Use `toml++` for parsing; implement schema/semantic validation in-house to support unknown-key warnings and per-field fallback.
+
+**Rationale**
+Needed for non-fatal behavior and precise key-path diagnostics.
+
+**Alternatives**
+- Switch parser library: rejected (unnecessary churn).
+
+**Consequences**
+- Validation layer becomes part of config compatibility surface (must follow SemVer policy in Ch9).
+
+**Tests/Gates**
+- [TEST-39] parse/validate/fallback + diagnostics.
+
+---
+
+## [DEC-65] System font discovery backends per platform
+**Decision**
+Use native platform font discovery:
+- Windows: DirectWrite
+- macOS: CoreText
+- Linux: fontconfig (optional; fallback if absent)
+
+**Rationale**
+Requirement: system fonts only; robust matching across platforms.
+
+**Alternatives**
+- Bundle fonts or accept font file paths: prohibited by [REQ-92].
+- “Best-effort” without native enumeration: insufficient.
+
+**Consequences**
+- Platform linkage and optional dependency handling on Linux.
+- Must keep last-known-good font resources on failure.
+
+**Tests/Gates**
+- [TEST-42]; Linux optionality gate [DEC-72].
+
+---
+
+## [DEC-66] File explorer root modes for Project vs Config
+**Decision**
+Implement explorer root modes to open `./config` without changing the project root.
+
+**Rationale**
+Matches requested UX while preserving project state.
+
+**Alternatives**
+- Open config as a folder/project: rejected (confuses project root semantics).
+
+**Consequences**
+- Explorer UI must support toggling roots.
+
+**Tests/Gates**
+- [TEST-43].
+
+---
+
+## [DEC-67] Config root resolution policy
+**Decision**
+Primary config root is `./config` relative to process working directory. Compatibility fallback: `exe_dir/config` with a warning diagnostic if used.
+
+**Rationale**
+User specified repo-root for now; fallback improves launch resilience.
+
+**Alternatives**
+- OS user data dir: deferred.
+- Search order across multiple roots: deferred.
+
+**Consequences**
+- Packaging must ensure `exe_dir/config` exists when cwd is not repo root (recommended).
+- Diagnostics must clearly indicate fallback path.
+
+**Tests/Gates**
+- [TEST-43] (includes fallback scenario).
+
+---
+
+## [DEC-68] API surface classification for v0.3 config system
+**Decision**
+All config/theme/keymap/font APIs are internal (non-exported, non-stable ABI).
+
+**Rationale**
+Avoids premature ABI commitments for IDE internals.
+
+**Alternatives**
+- Expose plugin ABI: requires dedicated CR.
+
+**Consequences**
+- Refactors remain allowed within internal boundaries; still must respect blueprint governance.
+
+**Tests/Gates**
+- Build gates unchanged; no ABI checks added for these internals in v0.3.
+
+---
+
+## [DEC-69] Deterministic derived ImGui style mapping contract
+**Decision**
+Define a stable, deterministic transform from scheme editor colors to ImGui style colors; apply optional overrides first.
+
+**Rationale**
+Ensures reproducible theming and stable snapshots across platforms.
+
+**Alternatives**
+- Randomized or heuristic mapping: rejected (non-deterministic).
+
+**Consequences**
+- Mapping changes are compatibility-relevant and must be tested and versioned.
+
+**Tests/Gates**
+- [TEST-40] golden snapshot.
+
+---
+
+## [DEC-70] Canonical internal color representation
+**Decision**
+Use packed 32-bit RGBA (`0xRRGGBBAA`) internally; parse only `#RRGGBB` and `#RRGGBBAA`.
+
+**Rationale**
+Compact storage and deterministic tests.
+
+**Alternatives**
+- Float vectors: higher overhead.
+- Named colors: rejected (schema ambiguity).
+
+**Consequences**
+- Color parsing errors must fall back per-field with diagnostics.
+
+**Tests/Gates**
+- [TEST-44], [TEST-39].
+
+---
+
+## [DEC-71] Snapshot publication strategy (main-thread swap)
+**Decision**
+Publish `ConfigSnapshot` via `shared_ptr<const ...>` and swap on main thread only; `Current()` is main-thread.
+
+**Rationale**
+Simplifies correctness and aligns with UI ownership.
+
+**Alternatives**
+- Atomic shared_ptr: rejected (unnecessary complexity for v0.3).
+
+**Consequences**
+- Off-thread consumers must be explicitly fed copies (not required in v0.3).
+
+**Tests/Gates**
+- [TEST-45] out-of-order completion gating via `reload_seq`.
+
+---
+
+## [DEC-72] Linux fontconfig optionality
+**Decision**
+Linux builds must succeed without fontconfig; runtime falls back to deterministic default fonts and emits diagnostics when requested families cannot be honored.
+
+**Rationale**
+Improves portability for CI/dev environments.
+
+**Alternatives**
+- Hard require fontconfig: rejected (build fragility).
+
+**Consequences**
+- Two backend paths on Linux (fontconfig vs fallback).
+
+**Tests/Gates**
+- [TEST-42]; build option coverage in CI matrix where feasible.
 
