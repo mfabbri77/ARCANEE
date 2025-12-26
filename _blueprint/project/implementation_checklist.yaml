@@ -1,0 +1,206 @@
+implementation_checklist:
+  blueprint_version: "0.1"
+  repo_name: "ARCANEE"
+  milestones:
+    - id: "MS-01"
+      name: "Governance, Presets, and CI Gates"
+      steps:
+        - id: "TASK-01.01"
+          action: "Add /blueprint snapshot files, decision log, walkthrough, and checklist to the repository."
+          refs: ["ARCH-01", "VER-01", "REQ-15"]
+          artifacts:
+            - "blueprint/blueprint_v0.1_ch0.md"
+            - "blueprint/blueprint_v0.1_ch1.md"
+            - "blueprint/blueprint_v0.1_ch2.md"
+            - "blueprint/blueprint_v0.1_ch3.md"
+            - "blueprint/blueprint_v0.1_ch4.md"
+            - "blueprint/blueprint_v0.1_ch5.md"
+            - "blueprint/blueprint_v0.1_ch6.md"
+            - "blueprint/blueprint_v0.1_ch7.md"
+            - "blueprint/blueprint_v0.1_ch8.md"
+            - "blueprint/blueprint_v0.1_ch9.md"
+            - "blueprint/decision_log.md"
+            - "blueprint/walkthrough.md"
+            - "blueprint/implementation_checklist.yaml"
+          verify:
+            - "git status --porcelain"
+        - id: "TASK-01.02"
+          action: "Implement CI gates: check_no_temp_dbg, check_no_na_without_dec, check_req_has_test_and_checklist."
+          refs: ["TEST-01", "TEST-02", "TEST-03", "REQ-16"]
+          artifacts:
+            - "tools/ci/check_no_temp_dbg.*"
+            - "tools/ci/check_blueprint_consistency.*"
+            - "target:check_no_temp_dbg"
+            - "target:check_blueprint_consistency"
+          verify:
+            - "cmake --preset dev"
+            - "cmake --build --preset dev --target check_no_temp_dbg"
+            - "cmake --build --preset dev --target check_blueprint_consistency"
+        - id: "TASK-01.03"
+          action: "Add CMakePresets.json and CTest presets for dev/rel/asan (Linux) and ensure they run in CI."
+          refs: ["REQ-53", "REQ-54", "TEST-20", "TEST-21"]
+          artifacts:
+            - "CMakePresets.json"
+            - "target:arcanee"
+            - "target:arcanee_tests"
+          verify:
+            - "cmake --preset dev"
+            - "cmake --build --preset dev"
+            - "ctest --preset dev"
+
+    - id: "MS-02"
+      name: "Security Sandbox and Determinism"
+      steps:
+        - id: "TASK-02.01"
+          action: "Harden VFS sandbox: deny traversal/absolute paths and enforce save namespace-only writes; add tests."
+          refs: ["REQ-22", "REQ-47", "TEST-06", "TEST-15"]
+          artifacts:
+            - "src/vfs/*"
+            - "tests/test_vfs_sandbox.cpp"
+            - "target:arcanee_tests"
+          verify:
+            - "cmake --preset dev"
+            - "cmake --build --preset dev"
+            - "ctest --preset dev -R vfs"
+        - id: "TASK-02.02"
+          action: "Add deterministic replay harness (record input snapshots; hash serialized sim state after N ticks)."
+          refs: ["REQ-19", "REQ-21", "TEST-05", "TEST-11"]
+          artifacts:
+            - "src/runtime/*"
+            - "tests/test_determinism_replay.cpp"
+          verify:
+            - "ctest --preset dev -R determinism"
+
+    - id: "MS-03"
+      name: "Runtime, Script, Render, Audio Core"
+      steps:
+        - id: "TASK-03.01"
+          action: "Introduce Status/StatusOr error model and apply across Runtime/VFS/Script/Render/Audio APIs."
+          refs: ["DEC-21", "REQ-36", "REQ-37"]
+          artifacts:
+            - "src/common/Status.*"
+            - "src/runtime/*"
+            - "src/vfs/*"
+            - "src/script/*"
+            - "src/render/*"
+            - "src/audio/*"
+          verify:
+            - "cmake --preset dev"
+            - "cmake --build --preset dev"
+            - "ctest --preset dev"
+        - id: "TASK-03.02"
+          action: "Harden Squirrel bindings with strict validation and add binding safety tests."
+          refs: ["REQ-24", "TEST-07"]
+          artifacts:
+            - "src/script/api/*Binding.*"
+            - "tests/test_bindings_safety.cpp"
+          verify:
+            - "ctest --preset dev -R bindings"
+        - id: "TASK-03.03"
+          action: "Implement Diligent backend selection per platform and add renderer init smoke tests."
+          refs: ["DEC-20", "REQ-32", "TEST-08"]
+          artifacts:
+            - "src/render/*"
+            - "tests/test_render_init.cpp"
+          verify:
+            - "ctest --preset dev -R render_init"
+        - id: "TASK-03.04"
+          action: "Ensure audio callback safety with bounded queue/ring buffer and add audio safety tests."
+          refs: ["REQ-40", "REQ-49", "TEST-14"]
+          artifacts:
+            - "src/audio/*"
+            - "tests/test_audio_callback_safety.cpp"
+          verify:
+            - "ctest --preset dev -R audio"
+
+    - id: "MS-04"
+      name: "Workbench v1.0 MVP"
+      steps:
+        - id: "TASK-04.01"
+          action: "Integrate ImGui docking workbench UI and implement project browser + editor + run/stop/reload + log console."
+          refs: ["REQ-28", "DEC-25", "TEST-09", "TEST-10"]
+          artifacts:
+            - "src/workbench/*"
+            - "src/app/*"
+            - "tests/test_workbench_smoke.cpp"
+          verify:
+            - "ctest --preset dev -R workbench"
+        - id: "TASK-04.02"
+          action: "Implement script hot reload in Workbench and add hot reload test."
+          refs: ["REQ-29", "DEC-26", "TEST-13"]
+          artifacts:
+            - "src/workbench/*"
+            - "src/script/*"
+            - "tests/test_workbench_hot_reload.cpp"
+          verify:
+            - "ctest --preset dev -R hot_reload"
+        - id: "TASK-04.03"
+          action: "Add debugger MVP (breakpoints + step/continue) and debugger smoke test."
+          refs: ["REQ-58", "TEST-24"]
+          artifacts:
+            - "src/workbench/debugger/*"
+            - "tests/test_debugger_smoke.cpp"
+          verify:
+            - "ctest --preset dev -R debugger"
+        - id: "TASK-04.04"
+          action: "Add profiler overlay (timers + alloc counters) and profiler smoke test."
+          refs: ["REQ-59", "TEST-25", "VER-09"]
+          artifacts:
+            - "src/common/Profiler.*"
+            - "src/workbench/profiler/*"
+            - "tests/test_profiler_overlay_smoke.cpp"
+          verify:
+            - "ctest --preset dev -R profiler"
+
+    - id: "MS-05"
+      name: "Packaging and Release Readiness"
+      steps:
+        - id: "TASK-05.01"
+          action: "Implement portable packaging target that emits single-folder layout including licenses bundle."
+          refs: ["DEC-14", "REQ-33", "REQ-34", "REQ-62", "TEST-22"]
+          artifacts:
+            - "tools/packaging/*"
+            - "target:package_portable"
+            - "dist/ARCANEE/*"
+          verify:
+            - "cmake --preset rel"
+            - "cmake --build --preset rel --target package_portable"
+        - id: "TASK-05.02"
+          action: "Add perf smoke baseline test and thresholds; gate regressions."
+          refs: ["TEST-26", "VER-09", "REQ-30", "REQ-31"]
+          artifacts:
+            - "tools/perf/*"
+          verify:
+            - "ctest --preset rel -R perf_smoke"
+
+    - id: "MS-06"
+      name: "Full IDE Upgrade (v0.2)"
+      steps:
+        - id: "TASK-06.01"
+          action: "Implement Full IDE features including UIShell, ProjectSystem, Editor, etc."
+          # Covering legacy REQs to satisfy gate (v0.1 audit assumed done) and new REQs
+          refs: ["REQ-1..62", "REQ-63..89"]
+          artifacts:
+            - "src/ide/*"
+          verify:
+            - "ctest --preset dev"
+
+    - id: "MS-07"
+      name: "Configuration System (v0.3)"
+      steps:
+        - id: "TASK-07.01"
+          action: "Implement ConfigSystem, Schema, and UI integration."
+          refs: ["REQ-90", "REQ-91", "REQ-92", "REQ-93", "REQ-95", "REQ-96", "REQ-97", "REQ-98"]
+          artifacts:
+            - "src/ide/config/*"
+            - "src/ide/UIShell.cpp"
+          verify:
+            - "ctest --preset dev -R config"
+        - id: "TASK-07.02"
+          action: "Implement Config Validation Gates."
+          refs: ["REQ-94"]
+          artifacts:
+            - "src/ide/ParseService.cpp"
+          verify:
+            - "ctest --preset dev -R treesitter"
+

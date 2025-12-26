@@ -1,238 +1,159 @@
-<!-- dependency_policy.md -->
+<!-- _blueprint/knowledge/dependency_policy.md -->
 
 # Dependency Policy (Normative)
+This document defines a robust policy for selecting, pinning, upgrading, and governing **third-party dependencies** in native C++ repositories (plus optional Python bindings).  
+It is designed to reduce technical debt, avoid supply-chain risks, and keep builds reproducible across versions.
 
-This policy governs selection, approval, integration, licensing, and updating of third-party dependencies for repositories governed by the DET CDD blueprint system.
-
-It is **normative** unless a higher-precedence rule overrides via DEC + enforcement.
-
----
-
-## 1. Goals
-
-- Ensure supply-chain security and license compliance.
-- Maintain deterministic builds (pinned versions, reproducible fetch).
-- Minimize dependency sprawl.
-- Provide clear rules for vendoring vs package manager usage.
-- Enforce dependency rules through CI gates.
+> **Precedence:** Prompt hard rules → `blueprint_schema.md` → this document → project-specific constraints.
 
 ---
 
-## 2. Definitions
-
-- **Dependency**: any third-party code/library/tool used at build time or runtime.
-- **Direct dependency**: referenced by project build or source directly.
-- **Transitive dependency**: required by a direct dependency.
-- **Vendoring**: copying dependency source into the repo (e.g., under `/third_party`).
-- **Pinned version**: explicit immutable identifier (tag + commit hash; or exact archive hash).
-- **SBOM**: software bill of materials (e.g., SPDX format).
-- **SLSA**: supply-chain levels for software artifacts (conceptual; see §10 guidance).
+## 1) Goals
+- Keep builds reproducible and deterministic.
+- Minimize dependency sprawl and ABI headaches.
+- Ensure license/security compliance.
+- Make upgrades deliberate and test-backed.
+- Support long-term lifecycle (v1.0 → v2.0) with predictable change control.
 
 ---
 
-## 3. Approval and documentation (MUST)
+## 2) Selection Rules (Mandatory)
+Before adding a dependency, answer:
+- What capability do we need that we cannot implement cheaply and safely?
+- Is the dependency widely used and maintained?
+- Does it support our platform matrix and toolchains?
+- Is the license acceptable for the distribution model?
 
-### 3.1 Dependency record required
-
-Every direct dependency MUST be recorded in a dependency manifest. Recommended location:
-- `/docs/dependencies.md` (non-blueprint)
-or
-- `/_blueprint/project/ch3_components.md` dependency section plus a dedicated non-blueprint manifest.
-
-The record MUST include:
-- name
-- purpose
-- license
-- version pin (tag + commit, or hash)
-- source URL
-- whether vendored or fetched
-- update policy (cadence and owner)
-
-### 3.2 Decision requirement for non-trivial deps
-
-Adding a non-trivial dependency (runtime library, networking stack, crypto, serialization, GPU SDK wrapper) MUST be accompanied by a DEC including:
-- alternatives considered
-- security and maintenance implications
-- performance impact
-- how it is pinned and updated
-- enforcement gates
-
-“Non-trivial” is any dependency that:
-- affects runtime behavior, or
-- ships to users, or
-- introduces significant transitive closure, or
-- involves native code/toolchains.
+**Rule:** Prefer fewer, stronger dependencies over many small ones.
 
 ---
 
-## 4. Default strategy (widely recognized, rational)
+## 3) Allowed/Discouraged Patterns
+### 3.1 Preferred
+- Single dependency manager: **vcpkg (manifest mode)** OR **conan** (choose one).
+- Header-only dependencies only when they are stable and do not bloat compile times excessively.
+- System libraries only when they are stable and available across targets (e.g., OS APIs).
 
-### 4.1 Prefer minimal dependencies
+### 3.2 Discouraged
+- Git submodules pointing to floating branches (non-deterministic).
+- “FetchContent from main branch” in CMake.
+- Vendor huge dependency trees without a strong reason.
 
-- Prefer standard library first.
-- Prefer small, well-maintained libraries with clear licensing.
-- Avoid “framework” dependencies unless they strongly reduce complexity.
+### 3.3 Vendoring (Exception-only)
+Vendoring is allowed only when:
+- dependency is small and stable, OR
+- licensing/compliance requires it, OR
+- build environments forbid external fetching.
 
-### 4.2 Prefer pinned and reproducible fetch
+**Rule:** If vendored, pin exact version and keep it under `/third_party/` with license files.
 
-Default recommended approaches (choose via DEC):
-- **FetchContent** with pinned `GIT_TAG` set to a commit hash (not a moving tag)
-- **CPM.cmake** pinned to commit + dependency pins
-- **vcpkg** manifest mode with locked baseline and versions
-- **Conan** with lockfiles
+---
+
+## 4) Pinning & Reproducibility (Mandatory)
+### 4.1 vcpkg
+- Use manifest mode: `vcpkg.json`
+- Pin baseline via `vcpkg-configuration.json` (or known-good commit/baseline)
+- Use explicit overrides for critical libs (avoid surprise upgrades)
+
+### 4.2 conan
+- Use lockfiles and pinned versions
+- Prefer profiles per platform/toolchain
+- Ensure CI uses the same lockfiles
+
+**Rule:** Dependencies must be pinned such that a build today equals a build tomorrow.
+
+---
+
+## 5) Public vs Private Dependencies (Mandatory)
+- Public dependencies affect consumers of your library (transitive requirements).
+- Private dependencies are implementation details.
 
 Rules:
-- Builds MUST NOT fetch moving targets (e.g., `main`, `master`, “latest”).
-- Builds MUST NOT depend on network access in “offline” CI mode unless explicitly approved via DEC.
-
-### 4.3 Vendoring policy (default)
-
-Vendoring is allowed when:
-- dependency is small,
-- updates are infrequent,
-- supply-chain risk is reduced by making source visible,
-- license permits redistribution.
-
-Vendored dependencies MUST:
-- include upstream license files
-- include an `UPSTREAM.md` file (recommended) recording:
-  - upstream URL
-  - version/commit
-  - local patches
-- be pinned to upstream commit hash
-
-Large dependencies SHOULD NOT be vendored unless DEC + justification exists.
+- Keep public deps minimal.
+- Do not leak private deps in exported CMake usage requirements.
+- Avoid exposing STL ABI-sensitive types across boundaries (see `cpp_api_abi_rules.md`).
 
 ---
 
-## 5. License policy (MUST)
+## 6) Upgrade Policy (Mandatory)
+### 6.1 Cadence
+- Define a cadence (e.g., monthly/quarterly) or “as-needed” with security exceptions.
+- Security fixes may be expedited.
 
-### 5.1 Allowed licenses (default allowlist)
+### 6.2 Change control
+- Any dependency addition/removal/major upgrade requires a CR (`[CR-XXXX]`).
+- The CR must include:
+  - why the change is needed
+  - impact analysis (ABI/API/performance)
+  - test plan
+  - rollback plan
 
-Default allowlist (widely recognized as permissive):
-- MIT
-- BSD-2-Clause, BSD-3-Clause
-- Apache-2.0
-
-Allowed with caution (DEC recommended depending on distribution model):
-- MPL-2.0 (file-level copyleft)
-- LGPL (dynamic linking constraints; generally avoid in static distribution)
-
-Generally forbidden for proprietary distribution unless legal approval exists (DEC + legal gate):
-- GPL-2.0/3.0 (strong copyleft)
-
-### 5.2 License documentation
-
-- Each dependency MUST have its license recorded.
-- CI SHOULD run a license scan and fail on forbidden licenses.
+### 6.3 Staged upgrades
+For risky upgrades:
+- isolate in a branch/CR
+- run full CI + sanitizers
+- include a compatibility note in CHANGELOG
 
 ---
 
-## 6. Security policy (MUST)
+## 7) Security Policy (Recommended baseline)
+- Track upstream advisories for critical deps.
+- On CVE:
+  - assess impact and exposure
+  - patch or upgrade promptly
+  - record the action in a CR and CHANGELOG if user-impacting
 
-### 6.1 Vulnerability management
-
-- CI MUST include a dependency vulnerability scan step when feasible.
-- For C++ projects, acceptable approaches include:
-  - GitHub Dependabot alerts (if on GitHub)
-  - OSV scanner for source dependencies (where supported)
-  - SCA tools used by org (document via DEC)
-
-If scanning cannot be done, add DEC + failing-fast gate requiring periodic manual review.
-
-### 6.2 Integrity and provenance
-
-- Dependencies MUST be pinned by immutable identifiers.
-- For archive downloads:
-  - MUST verify SHA256 (or stronger) hash.
-- For git fetches:
-  - MUST pin commit hash.
-- Prefer signed tags/releases when available; document verification.
-
-### 6.3 No hidden fetches
-
-Build scripts MUST NOT:
-- curl/wget arbitrary URLs without verification,
-- execute remote scripts.
-
-Any exception requires DEC + security gate.
+Optional but recommended for commercial distribution:
+- SBOM generation (CycloneDX/SPDX) on release builds.
 
 ---
 
-## 7. Toolchain dependencies (build-time)
+## 8) License Compliance (Mandatory)
+- Every dependency must have a license compatible with the project’s distribution.
+- Maintain a `THIRD_PARTY_NOTICES` or similar summary if shipping to customers.
+- Avoid GPL/LGPL unless the distribution model explicitly supports it.
 
-Build-time tools (clang-format, clang-tidy, python scripts, code generators) MUST be:
-- version-pinned (via CI images, toolchain files, or explicit download with hash)
-- documented in Ch7 toolchain matrix.
-
-If python tooling is used:
-- pin requirements in `requirements.txt` or lockfile (recommended).
+**Rule:** If license is uncertain, do not add the dependency until clarified.
 
 ---
 
-## 8. Updating dependencies (normative)
+## 9) Performance & Footprint Considerations
+- Consider compile-time cost (templates, header-only heavy libs).
+- Consider runtime overhead (allocations, logging, dynamic dispatch).
+- Consider binary size, especially for shipped SDKs and Python wheels.
 
-### 8.1 Update cadence
-
-Default:
-- security updates: urgent (within days to weeks)
-- routine updates: quarterly or as needed
-
-Projects MUST document:
-- who owns updates
-- how updates are tested (CI full matrix)
-- how compatibility is assessed (SemVer + API/ABI rules)
-
-### 8.2 Update process
-
-For each dependency update:
-- create a CR
-- update pins and manifests
-- run full CI matrix
-- run benchmarks if hotpath/perf budgets are relevant
+**Rule:** If a dependency is on the hot path, require benchmarks and regression thresholds.
 
 ---
 
-## 9. Enforcements (MUST)
+## 10) Common Approved Libraries (Examples, non-binding)
+Depending on project constraints, commonly acceptable choices:
+- Logging: spdlog / glog
+- CLI: cxxopts / CLI11
+- JSON: nlohmann/json (careful with compile time) or rapidjson
+- Tests: Catch2 / GoogleTest
+- Bench: Google Benchmark
+- Vulkan: volk + VMA (if allowed)
 
-CI MUST include gates that fail on:
-- unpinned dependencies (moving tags/branches)
-- network fetches without hash/commit pins
-- missing license records for dependencies
-- forbidden licenses (unless DEC + explicit allow with legal gate)
-- dependency updates without accompanying CR (recommended gate)
-
-Validator SHOULD check:
-- dependency manifest exists and entries are complete (if standardized location is known)
-- blueprint references to dependency policy exist
+**Rule:** The Blueprint must explicitly list chosen deps and why.
 
 ---
 
-## 10. Recommended advanced practices (non-normative)
+## 11) Documentation Requirements (Mandatory)
+Blueprint must include a dependency table with:
+- name, version, license, purpose, public/private, upgrade notes
 
-- Generate an SBOM (SPDX) as a CI artifact.
-- Use SLSA provenance where supported by CI system.
-- Use reproducible builds flags (e.g., `-Wdate-time` avoidance, `SOURCE_DATE_EPOCH`).
-
----
-
-## 11. Widely recognized “safe defaults” catalog (informative)
-
-Common C++ dependencies and typical rationale (approval still requires DEC when non-trivial):
-- `fmt` (formatting) — small, widely used, permissive license
-- `spdlog` (logging) — widely used, but evaluate against determinism budgets
-- `gtest` (testing) — standard
-- `benchmark` (perf microbench) — standard
-
-Use only if they satisfy:
-- license allowlist
-- pinned versions
-- performance and determinism constraints
+Repo should include:
+- `vcpkg.json` or `conanfile.*`
+- baseline/lockfiles
+- documentation on how to bootstrap deps locally
 
 ---
 
-## 12. Policy changes
-
-Changes to this policy MUST be introduced via CR and MUST include:
-- enforcement/gate changes,
-- migration guidance for existing projects.
+## 12) Quick Checklist
+- [ ] Single dependency manager chosen and documented
+- [ ] All deps pinned via baseline/lockfiles
+- [ ] Public deps minimized; private deps not leaked
+- [ ] License checked for every dependency
+- [ ] Security/CVE response policy defined
+- [ ] Major upgrades done via CR with tests and rollback plan

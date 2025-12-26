@@ -1,259 +1,191 @@
-<!-- ci_reference.md -->
+<!-- _blueprint/knowledge/ci_reference.md -->
 
 # CI Reference (Normative)
+This document defines a **golden CI baseline** for native C++ repositories (and optional Python bindings) with strong quality gates: formatting, lint, sanitizers, tests, benchmarks (optional), and **TEMP-DBG** enforcement.
 
-This document defines the **minimum CI requirements**, gate catalog, and reference implementations for projects governed by the DET CDD blueprint system.
-
-It is **normative**: CI MUST include the required jobs and MUST enforce the gates described here, unless a higher-precedence rule overrides via DEC + enforcement.
-
----
-
-## 1. Principles
-
-CI MUST be:
-- **Deterministic** (no flaky dependencies without explicit isolation),
-- **Cross-platform** (ubuntu/windows/macos matrix),
-- **Reproducible locally** (commands documented and runnable),
-- **Gate-driven** (fail fast on blueprint violations),
-- **Traceable** (gates map to BUILD/TST IDs, CRs, and release docs).
+> **Precedence:** Prompt hard rules → `blueprint_schema.md` → this document → project-specific constraints.
 
 ---
 
-## 2. Required CI matrix (XPLAT)
-
-### 2.1 Minimum OS coverage (MUST)
-
-CI MUST run build+test on:
-- Ubuntu (latest LTS pinned recommended)
-- Windows (latest stable pinned recommended)
-- macOS (latest stable pinned recommended)
-
-### 2.2 Compiler coverage (MUST)
-
-At least one compiler variant per OS MUST run. Recommended defaults:
-- Ubuntu: GCC and/or Clang (at least one)
-- Windows: MSVC (required) + ClangCL optional
-- macOS: AppleClang (required)
-
-If an OS lacks a feasible sanitizer/analysis tool (e.g., TSan on Windows), document via DEC and provide a substitute job (static analysis, /analyze).
-
-### 2.3 Architectures (SHOULD)
-
-- x86_64 on all OS
-- arm64 on macOS (if runners available) and optionally Linux (if project supports)
+## 1) CI Goals
+- Ensure every change is buildable and testable on the supported platform matrix.
+- Enforce repository hygiene (format, lint, no TEMP-DBG).
+- Catch memory/thread/UB issues early (sanitizers).
+- Prevent performance regressions (optional but recommended for perf-critical projects).
+- Produce deterministic artifacts for releases.
 
 ---
 
-## 3. Required CI stages (MUST)
+## 2) Mandatory Gates (Must-Fail Conditions)
+The CI must fail the change if any of the following fail:
+1) **Build succeeds** (per platform matrix)
+2) **Unit/Integration tests pass** (`ctest ...`)
+3) **Sanitizers pass** (at least ASan+UBSan on Linux; TSan where feasible)
+4) **Formatting is clean** (`format_check`)
+5) **No TEMP-DBG markers** (`check_no_temp_dbg`)
+6) **Packaging/install/export checks** (if library/SDK ships artifacts)
 
-Minimum stages (jobs) required:
-
-1. **Blueprint validation** (schema + invariants + Eff(V) composition)
-2. **Configure** (CMakePresets.json)
-3. **Build**
-4. **Unit tests**
-5. **Integration tests** (if any; otherwise document absence)
-6. **Sanitizer / Analysis job** (ASan+UBSan or equivalent)
-7. **Format/Lint** (style enforcement)
-8. **Release invariants check** (if overlay exists or on release branches)
-
-CI MUST run these stages per OS where feasible. Some stages (format/lint) MAY run on a single OS if fully deterministic and documented.
-
----
-
-## 4. Gate catalog (normative)
-
-Gates are grouped by category. Each gate SHOULD correspond to a `BUILD-xxxxx` or `TST-xxxxx` ID in the blueprint.
-
-### 4.1 Blueprint correctness gates
-
-#### GATE: MD header invariant
-- **Intent:** enforce `<!-- filename.md -->` first line on all `*.md` under `/_blueprint/`
-- **Failure:** missing/malformed header
-- **Remediation:** add correct first-line comment matching basename
-
-#### GATE: No forbidden literals
-- Forbid:
-  - `N/A`
-  - `[TEMP-DBG]` (must be absent in final; see temp_dbg_policy)
-- Failure includes file + line + match
-
-#### GATE: Composition/inheritance validity (COMP-01)
-- Reconstruct Eff(vCURRENT) and (if applicable) Eff(vNEXT)
-- Validate:
-  - all Ch0..Ch9 exist
-  - inherit files are exact and targets resolve
-  - rule-chain references resolve or DEC+stub+failing gate exists
-
-#### GATE: ID monotonicity and no renumbering
-- For Mode C overlays:
-  - ensure IDs are not renumbered vs prior Eff()
-  - ensure new IDs advance monotonically per prefix
-
-#### GATE: REQ coverage
-- Fail if any REQ lacks:
-  - ≥1 TST reference
-  - ≥1 checklist step
-
-#### GATE: Release.md invariants
-- Version strictly increases vs Release History
-- Previous matches the immediately prior patch
-- CR list references existing CR files
-- Gates list present
-
-### 4.2 Build reproducibility gates
-
-#### GATE: CMakePresets.json required and valid
-- Ensure presets exist:
-  - per-OS configure/build/test presets
-  - `ci-<os>` presets
-- Ensure presets use pinned generators/toolchains where specified
-
-#### GATE: Clean configure/build/test
-- Configure via presets
-- Build via presets
-- Run tests via CTest or preset-defined test step
-
-#### GATE: Warnings-as-errors (CI default)
-- Ensure CI builds with warnings treated as errors unless DEC allows exceptions.
-
-### 4.3 Testing quality gates
-
-#### GATE: Unit tests required
-- At least one unit test suite must run and pass on each OS.
-
-#### GATE: Negative tests (when applicable)
-- For security/network/persistence topics, require negative tests and/or fuzzing stubs per policy.
-
-#### GATE: Fuzzing (conditional)
-- When fuzzing is required by testing_strategy.md, run fuzzers at least on one OS.
-- If fuzzing cannot run in CI, provide DEC + alternate gate (oss-fuzz integration, nightly job, or local-only with failing-fast gating).
-
-### 4.4 Sanitizer / analysis gates
-
-#### GATE: ASan+UBSan job (Linux/macOS)
-- Run sanitizer builds with tests.
-- If a sanitizer cannot run, DEC + substitute static analysis gate required.
-
-#### GATE: TSan job (where feasible)
-- If concurrency-heavy, run TSan at least on Linux or macOS.
-- If infeasible, DEC and add an alternate concurrency analysis gate.
-
-#### GATE: Windows analysis
-- Prefer:
-  - Windows ASan if supported by toolchain, OR
-  - MSVC `/analyze` static analysis
-
-### 4.5 Formatting / lint gates
-
-#### GATE: clang-format check
-- Verify formatting is compliant (`--dry-run` / `--Werror` behavior).
-- Must be deterministic and stable.
-
-#### GATE: clang-tidy (or equivalent)
-- Run on at least one OS (Linux recommended).
-- Use compile_commands.json from CMake.
-
-### 4.6 Performance gates (conditional)
-
-If the blueprint defines performance budgets (Ch1/Ch5):
-- Require:
-  - benchmark harness runnable in CI (at least smoke),
-  - performance regression checks (relative thresholds),
-  - results artifacts saved (optional; depends on CI system).
+Optional but recommended:
+- clang-tidy (lint)
+- fuzz smoke tests
+- benchmark regression thresholds
 
 ---
 
-## 5. Reference CI workflow structure (GitHub Actions-style)
+## 3) Platform Matrix (Recommended)
+Define in the Blueprint ([ARCH-XX]) and implement in CI:
+- **Linux (primary):** clang (preferred) + gcc (optional), Ninja, ASan/UBSan/TSan
+- **Windows:** MSVC or clang-cl, Ninja, unit tests, (sanitizers limited)
+- **macOS:** AppleClang, Ninja, unit tests (sanitizers where feasible)
 
-This section is **informative** but widely applicable; adapt to your CI system as needed.
-
-### 5.1 Jobs (suggested)
-
-- `blueprint-validate` (linux)
-- `format-lint` (linux)
-- `build-test-ubuntu` (linux)
-- `build-test-windows` (windows)
-- `build-test-macos` (macos)
-- `sanitizers-asan-ubsan` (linux/macos)
-- `sanitizers-tsan` (linux; conditional)
-- `static-analysis-windows` (windows)
-- `release-invariants` (linux; conditional on release branches/tags)
-
-### 5.2 Required local-equivalent commands
-
-For each job, Ch7 MUST document commands equivalent to CI, typically:
-
-- `cmake --preset ci-linux`
-- `cmake --build --preset ci-linux`
-- `ctest --preset ci-linux` (or `cmake --build --preset ... --target test`)
-
-Blueprint validator:
-- `python3 tools/blueprint/compose_validate.py --current`
-or
-- `cmake --build --preset ... --target tool_blueprint_validator && <invoke>`
+Minimum recommended:
+- Linux + one of (Windows or macOS).
+If the project targets all three, CI must run all three.
 
 ---
 
-## 6. Gate implementation guidance (normative for validator)
+## 4) Dependency Caching (Mandatory)
+CI must cache dependency builds:
+- **vcpkg**: cache `VCPKG_DEFAULT_BINARY_CACHE` (or GH Actions cache path) + lockfile/manifest keying
+- **conan**: cache conan home + lockfiles
 
-The composer/validator script SHOULD implement most blueprint correctness gates to keep CI workflows simple. CI jobs then call the validator.
-
-Validator output MUST:
-- print the gate name/ID on failure,
-- print file + line where possible,
-- include a short remediation hint.
-
-Exit codes:
-- 0 success
-- non-zero failure (gate violated)
+Rules:
+- Cache key must include OS + compiler + dependency manifest hash.
+- Cache should be read-only on PR forks if security policy requires it.
 
 ---
 
-## 7. Artifact retention and logs
+## 5) Standard Job Set (Golden Pipeline)
+### 5.1 Preflight (fast)
+- `check_no_temp_dbg`
+- `format_check`
+- `configure` + minimal build (dev or ci preset)
 
-CI SHOULD store:
-- validator report (text or JSON)
-- test reports (JUnit XML if supported)
-- sanitizer logs
-- performance benchmark outputs (if run)
+### 5.2 Build & Test (per platform)
+- Configure with preset (e.g., `ci`)
+- Build
+- `ctest --output-on-failure` (preset-backed)
 
-Logs MUST respect redaction policies (see logging_observability_policy_new.md).
+### 5.3 Sanitizers (Linux focused)
+Run at least:
+- `asan` preset
+- `ubsan` preset  
+And, where supported:
+- `tsan` preset
+
+Rules:
+- Sanitizer jobs must run tests (not only build).
+- If a sanitizer is unsupported on a platform, document it under [BUILD-04]/[TEST-XX].
+
+### 5.4 Lint (recommended)
+- `lint` target (clang-tidy) or equivalent
+- May be allowed to be “non-blocking” initially, but goal is to make it blocking.
+
+### 5.5 Bench (optional, for perf budgets)
+- Run microbenchmarks on a stable runner type if possible.
+- Enforce regression thresholds (see `performance_benchmark_harness.md` if present).
+
+### 5.6 Packaging (if shipping)
+- `cmake --build --preset release`
+- `cmake --install ...` to a staging directory
+- Verify exported config (`<proj>Config.cmake`) loads in a minimal downstream consumer test.
 
 ---
 
-## 8. Branch and release protections (recommended)
-
-- Require passing CI gates before merge to main.
-- Require release invariants gate on tags/releases.
-- Enforce CODEOWNERS for `/_blueprint/` and CI configs.
-
----
-
-## 9. Minimal gate mapping table (recommended)
-
-Projects SHOULD maintain a table in Ch7 or in CI docs mapping gates to jobs.
-
-Example:
-
-| Gate ID | Gate name | Implemented by | Runs on |
-|---|---|---|---|
-| BUILD-00001 | blueprint-validate | tools/blueprint/compose_validate.py | ubuntu |
-| BUILD-00002 | presets-required | validator check | ubuntu |
-| TST-00010 | unit-tests | ctest preset | all OS |
+## 6) Required Commands (CMake Presets Convention)
+CI should use presets only (avoid ad-hoc flags).
+Typical commands:
+- `cmake --preset <preset>`
+- `cmake --build --preset <preset>`
+- `ctest --preset <preset> --output-on-failure`
+Quality gates:
+- `cmake --build --preset <preset> --target check_no_temp_dbg`
+- `cmake --build --preset <preset> --target format_check`
+- `cmake --build --preset <preset> --target lint` (if enabled)
 
 ---
 
-## 10. CI “must fail” conditions (summary)
+## 7) TEMP-DBG Gate (Mandatory)
+CI must run the `check_no_temp_dbg` target (or script) on every PR/merge.
+- Fail if any `[TEMP-DBG] START` or `[TEMP-DBG] END` is present in tracked sources.
+- Print file + line numbers.
 
-CI MUST fail on:
-- any `[TEMP-DBG]` occurrences (per policy)
-- any `N/A` occurrences
-- missing/malformed blueprint MD header comments
-- missing Ch0..Ch9 in Eff(V)
-- broken inheritance
-- REQ without tests or checklist coverage
-- invalid or missing `CMakePresets.json`
-- missing required OS matrix coverage
-- missing sanitizer/analysis job without DEC+substitute
-- invalid `release.md` invariants
+Reference: `temp_dbg_policy.md`.
+
+---
+
+## 8) Artifacts & Logs (Recommended)
+Always upload on failure:
+- `CTest` logs
+- sanitizer reports (if generated)
+- `compile_commands.json` (optional; helpful for debugging)
+
+On release builds:
+- built packages/archives
+- SBOM (if applicable)
+- generated docs (optional)
+
+---
+
+## 9) Release Workflow (Recommended)
+### 9.1 Tag-driven releases
+- Tags: `v<MAJOR>.<MINOR>.<PATCH>`
+- On tag:
+  - run full matrix + sanitizers (where applicable)
+  - build release artifacts
+  - publish artifacts (registry/release page)
+
+### 9.2 Required release files
+Enforce presence of:
+- `CHANGELOG.md`
+- `MIGRATION.md` if MAJOR
+- updated `/blueprint` snapshot for that release
+
+---
+
+## 10) Security Notes (Practical)
+- Pin dependencies (manifest/lockfiles).
+- Avoid executing untrusted code from PR forks in privileged contexts.
+- If using caches, ensure keys are not attacker-controlled.
+
+---
+
+## 11) Minimal GitHub Actions Skeleton (Reference)
+This is a conceptual reference only; projects may adapt while preserving gates.
+
+```yaml
+name: ci
+on: [pull_request, push]
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake --preset ci
+      - name: Gates
+        run: |
+          cmake --build --preset ci --target check_no_temp_dbg
+          cmake --build --preset ci --target format_check
+      - name: Build
+        run: cmake --build --preset ci
+      - name: Test
+        run: ctest --preset ci --output-on-failure
+  asan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake --preset asan
+      - run: cmake --build --preset asan
+      - run: ctest --preset asan --output-on-failure
+```
+
+---
+
+## 12) Compliance Checklist
+- [ ] CI runs on declared platform matrix ([ARCH-XX])
+- [ ] `check_no_temp_dbg` and `format_check` are blocking gates
+- [ ] Tests run on every PR/merge
+- [ ] ASan+UBSan run at least on Linux
+- [ ] Dependency caching is configured and keyed safely
+- [ ] Release workflow produces deterministic artifacts and enforces required docs

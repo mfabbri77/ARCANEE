@@ -1,549 +1,513 @@
-<!-- GPU_APIs_rules.md -->
+<!-- _blueprint/knowledge/GPU_APIs_rules.md -->
 
 # GPU APIs Backend Rules (Normative)
-This document defines **best-practice rules** for implementing GPU backends inside a **multi-backend native C++** project governed by the DET CDD blueprint system. It consolidates backend-specific rules for **DirectX 12**, **Vulkan**, and **Metal**, and provides cross-cutting requirements that enable deterministic evolution (v1→v2+), strong contracts, and CI-enforced correctness.
+This document defines best-practice rules for implementing **GPU backends** inside a multi-backend native C++ project.
+It consolidates backend-specific rules for **DirectX 12**, **Vulkan**, and **Metal**, and is structured to allow adding
+additional GPU APIs in the future (e.g., OpenGL, WebGPU, CUDA interop, etc.) as new sections.
 
-> **Precedence (within the overall system):** Prompt hard rules → `blueprint_schema.md` → this document → project-specific rulefiles → user constraints → DEC.
+> **Precedence (within the overall system):** Prompt hard rules → `blueprint_schema.md` → this document → project-specific constraints.
 
----
-
-## 0. Applicability and required blueprint hooks (MUST)
-
-When TOPIC includes `gpu` (or GPU is being evaluated), the blueprint MUST include a GPU decision (DEC) that explicitly states:
-- **Backend selection**: Vulkan and/or Metal and/or DirectX 12 (or “no GPU”).
-- **Target platform matrix**: OS baselines, GPU vendor classes, minimum driver/SDK.
-- **Feature subset**: what features are supported vs out-of-scope.
-- **Abstraction boundary**: what is backend-agnostic vs backend-specific.
-- **Threading and synchronization model**: command recording, submission, resource lifetime, hazards.
-- **Error model**: mapping backend errors to project errors, device lost policy.
-- **Testing strategy**: smoke + negative + stress + (optional) perf; CI feasibility plan.
-- **Observability**: logging/metrics/tracing budgets and debug tooling integration.
-
-If “no GPU” is selected, the blueprint MUST add **compile-time** and **runtime** exclusion gates:
-- no GPU headers/libs included,
-- no GPU runtime dependencies shipped,
-- no GPU code paths reachable in production binaries.
-
----
-
-## 1. Glossary (short)
-
-- **Backend**: a concrete implementation using a specific API (DX12/Vulkan/Metal).
-- **Core**: backend-agnostic engine layer that uses a unified internal interface.
-- **Public API**: exported headers under `/include/<proj>/...` (subject to `cpp_api_abi_rules.md`).
-- **Hot path**: latency-critical per-frame/per-tick path (see Ch5 in blueprint).
-- **Device-lost**: GPU reset/removal scenario requiring explicit policy.
+## How to extend this file (for new GPU APIs)
+- Add a new top-level section: `## <API Name> Backend Rules (Normative)`
+- Keep the same internal structure as existing backends:
+  - Boundary / leakage rules
+  - Device selection + capability gating
+  - Resource lifetime + ownership
+  - Synchronization / hazards
+  - Binding/descriptor model
+  - Pipeline + shader strategy
+  - Present/swapchain (if applicable)
+  - Debug/diagnostics
+  - Error handling
+  - Threading model
+  - Testing requirements
+  - Quick checklist
+- If you introduce cross-cutting rules that apply to *all* GPU backends, put them in **Common GPU Backend Rules** below.
 
 ---
 
-## 2. How to extend this file (for new GPU APIs) (MUST)
-To add support for a new GPU API (e.g., WebGPU, CUDA interop, OpenGL), you MUST:
-1. Add a new top-level section: `## <API Name> Backend Rules (Normative)`.
-2. Preserve the same internal structure as existing backends:
-   - Boundary / leakage rules
-   - Device selection + capability gating
-   - Resource lifetime + ownership
-   - Synchronization / hazards
-   - Binding/descriptor model
-   - Pipeline + shader strategy
-   - Present/swapchain (if applicable)
-   - Debug/diagnostics
-   - Error handling + device lost policy
-   - Threading model
-   - Testing requirements
-   - Quick checklist
-3. Put cross-cutting rules in **Common GPU Backend Rules** only.
+## Common GPU Backend Rules (Applies to all backends)
+### A) Backend isolation and header hygiene (Mandatory)
+- Each backend MUST live in its own dedicated target and directory (e.g., `<proj>_vk`, `<proj>_dx12`, `<proj>_mtl`).
+- The core MUST depend on backends only via an interface (factory/registry). Backends MUST NOT leak platform/GPU headers into
+  core/public headers unless explicitly part of the public API.
+
+### B) Capability gating (Mandatory)
+- Backend capabilities MUST be queried at startup, captured in a capability struct, and used to gate feature usage.
+- Optional features MUST never be assumed present based on “common hardware” heuristics.
+
+### C) Hot-path discipline (Mandatory)
+- Avoid allocations and expensive object creation on the render hot path (descriptor allocations per draw, pipeline creation per draw, etc.).
+- Prefer pooling/caching and per-frame contexts.
+
+### D) Error handling (Mandatory)
+- Backend-specific error codes MUST be mapped to canonical project errors per `error_handling_playbook.md`.
+- Preserve the raw backend error code as a `subcode` or equivalent field for diagnostics.
+
+### E) Diagnostics and TEMP-DBG (Mandatory)
+- Integrate with project logging/observability policy.
+- Any ad-hoc debug prints MUST follow `temp_dbg_policy.md`.
+
+### F) Testing baseline (Mandatory)
+Blueprints MUST define tests for:
+- init smoke (device creation + minimal submission)
+- resource creation/destruction stress (leak detection)
+- synchronization correctness smoke (as applicable)
+- present/resize (if applicable)
+- device lost/removed handling strategy (as feasible)
+- a CI-friendly headless/offscreen mode is RECOMMENDED.
 
 ---
 
-## 3. Common GPU Backend Rules (Applies to all backends) (MUST)
+## DirectX 12 Backend Rules (Normative)
 
-### 3.A Backend isolation and header hygiene
-- Each backend MUST live in its own dedicated directory and build target:
-  - examples: `<proj>_vk`, `<proj>_dx12`, `<proj>_mtl`.
-- Core MUST depend on backends only via a stable internal interface (factory/registry/service locator).
-- Backend headers MUST NOT leak platform/GPU headers into core or public headers, unless explicitly part of the public API.
-  - Public headers under `/include/<proj>/...` MUST NOT include:
-    - `windows.h`, `d3d12.h`, `dxgi.h`
-    - `<vulkan/vulkan.h>`
-    - `<Metal/Metal.h>` / ObjC headers
-  unless a DEC declares that backend-native objects are part of the SDK surface.
+### 1) Backend Boundary (Mandatory)
+- DX12 code must live under a dedicated backend target (e.g., `<proj>_dx12`) and folder (e.g., `/src/backends/dx12/`).
+- Core must depend on backend via an interface (factory/registry). Backend must not leak Windows/DX headers into core/public headers unless explicitly part of the public API.
 
-**Rationale:** prevents accidental platform lock-in and reduces rebuild churn.
+**Rule:** Public headers under `/include/<proj>/` must not include `d3d12.h`, `dxgi.h`, `windows.h` unless the SDK explicitly exposes DX objects.
 
-### 3.B Deterministic backend selection and capability gating
-- Backend selection MUST be deterministic:
-  - explicit configuration option (compile-time or runtime),
-  - deterministic device selection rules,
-  - log/report chosen backend + device + key capabilities.
-- Capabilities MUST be captured at startup into a **capability struct** (immutable after init) and used to gate feature usage.
-- Optional features MUST NEVER be assumed present due to “common hardware” heuristics.
-
-**Minimum required capability fields (recommended):**
-- API version / feature level
-- shader model / language level
-- resource binding tier / descriptor indexing support
-- supported formats used by the project
-- queue families / queue types available
-- timestamp queries availability and precision (if used)
-- memory model constraints (UMA vs discrete, host-visible coherence behavior)
-- presentation support (if applicable)
-
-### 3.C Hot-path discipline (allocations, creation, blocking)
-- GPU resource creation (pipelines, descriptor sets/heaps, PSOs) MUST be avoided on the hot path.
-- Per-draw/per-dispatch allocations are forbidden on the hot path unless DEC + perf gates.
-- CPU waits for GPU completion are forbidden on the hot path unless DEC + perf gates.
-- Prefer:
-  - pooling/suballocation for descriptors and transient buffers,
-  - per-frame contexts with ring buffers,
-  - pipeline/PSO caches.
-
-### 3.D Resource lifetime and shutdown ordering
-- All backend resources MUST be managed via RAII with explicit ownership.
-- Shutdown order MUST be deterministic and documented (device/queue last or first per API rules; choose and enforce).
-- Destruction MUST be safe with in-flight GPU work:
-  - resources MUST not be freed while GPU can still reference them.
-  - reclamation MUST be fence-guarded (or equivalent completion tracking).
-
-### 3.E Synchronization and hazard correctness
-- The blueprint MUST choose a synchronization model and document it:
-  - “single graphics queue” vs “multi-queue”
-  - per-frame fence model
-  - timeline semaphores (where available) vs binary sync
-- A resource state/hazard tracking strategy MUST be chosen and implemented:
-  - explicit tracking (DX12 required; Vulkan strongly recommended),
-  - layout tracking for images (Vulkan/Metal),
-  - upload/download visibility rules (CPU↔GPU).
-
-### 3.F Error handling and device lost policy
-- Backend-specific errors MUST be mapped to canonical project errors per `error_handling_playbook.md`.
-- Preserve raw backend error code as `subcode` (e.g., HRESULT/VkResult) for diagnostics.
-- Device-lost/removal MUST have an explicit policy:
-  - recover by device recreation (with state restoration), OR
-  - fail-fast with clear message and crash diagnostics.
-- The policy MUST be testable (as feasible) and observable (logs/metrics).
-
-### 3.G Shader and pipeline portability strategy
-A project MUST choose (DEC) a shader strategy that works across selected backends:
-- source language (HLSL/GLSL/MSL) and compilation pipeline,
-- intermediate representation(s) (SPIR-V, DXIL),
-- reflection strategy (offline reflection preferred for determinism),
-- stable binding layout rules across backends.
-
-Rules:
-- Runtime shader compilation in shipping builds is discouraged; if allowed, requires DEC + performance budget + caching strategy.
-- Shader interface changes (bindings, vertex formats) MUST be treated as versioned changes; provide migration notes if exposed.
-
-### 3.H Present / swapchain policy (when applicable)
-If presentation is in scope:
-- The project MUST define swapchain policy:
-  - format selection
-  - colorspace
-  - vsync policy
-  - resize handling strategy
-- Resize and surface loss handling MUST be robust and leak-free.
-
-If headless/offscreen operation is in scope:
-- Define a headless path per backend (recommended for CI).
-
-### 3.I Observability, diagnostics, and redaction
-- GPU debug output MUST route through the project logging policy (`logging_observability_policy_new.md`).
-- Debug markers (RenderDoc/PIX/Xcode groups) SHOULD be enabled in debug builds and disabled/sampled in release builds.
-- Ad-hoc debug prints MUST follow `temp_dbg_policy.md`.
-- Logs MUST avoid unbounded dumps of shaders/resources unless DEC + redaction.
-
-### 3.J Minimal test baseline (MUST)
-Blueprint MUST define tests for:
-- **init smoke**: device creation + minimal submission (no present required)
-- **resource lifetime stress**: create/destroy many resources; detect leaks
-- **sync correctness smoke**: fences/semaphores correctness for at least one frame loop
-- **present/resize** (if applicable): create, present, resize, recreate, present again
-- **device lost policy**: at minimum, a simulated failure path test (see backend sections)
-
-CI-friendly headless/offscreen mode is RECOMMENDED.
-
----
-
-## 4. Cross-backend layering model (Recommended, becomes MUST when multi-backend)
-
-### 4.1 Layering (recommended)
-- **Core** defines backend-agnostic interfaces:
-  - `IGpuDevice`, `ICommandQueue`, `ICommandList/Encoder`, `IBuffer`, `ITexture`, `IPipeline`, `IDescriptorSet/BindGroup`, `ISwapchain`.
-- **Backend** implements these interfaces and owns native objects.
-- **Translation layer** handles:
-  - shader reflection translation,
-  - resource state translation,
-  - platform surface integration.
-
-### 4.2 Handle leakage policy
-- Public API SHOULD remain backend-agnostic.
-- If native handles must be exposed (advanced integration):
-  - expose via opaque handle wrappers,
-  - guard by compile-time feature flags,
-  - document ABI policy and platform coupling in Ch4.
-
-### 4.3 Compile-time vs runtime backend selection
-- Compile-time selection reduces footprint and improves determinism.
-- Runtime selection improves portability and can enable fallback.
-- If runtime selection is used:
-  - selection must be deterministic (config-driven),
-  - dynamic loading must be version-pinned and gated,
-  - backend absence must fail gracefully with actionable error.
-
----
-
-## 5. DirectX 12 Backend Rules (Normative)
-
-### 5.1 Backend boundary (MUST)
-- DX12 code MUST live under a dedicated backend target and folder (e.g., `/src/backends/dx12/`).
-- Core/public headers MUST NOT include `windows.h`, `d3d12.h`, `dxgi.h` unless explicitly part of public API.
-
-### 5.2 Device & adapter selection (MUST)
+### 2) Device & Adapter Selection
+#### 2.1 DXGI factory & adapter enumeration
 - Enumerate adapters via DXGI.
-- Provide deterministic adapter selection:
-  - prefer high-performance adapter by default,
-  - allow explicit selection by LUID/index,
-  - log: adapter name, vendor/device id, memory, driver version (where feasible).
-- Pin minimum `D3D_FEATURE_LEVEL` and document it.
-- Query and store capability struct including:
+- Prefer high-performance GPU (discrete) unless overridden by configuration.
+- Support explicit adapter selection by LUID/index for reproducibility.
+
+#### 2.2 Feature level and caps
+- Choose minimum `D3D_FEATURE_LEVEL` required by the project and document it.
+- Query key caps:
   - resource binding tier
   - descriptor heap sizes
   - shader model requirements
-  - optional features (mesh shaders, sampler feedback, etc.) only if used
+  - optional features (mesh shaders, sampler feedback, etc.) only if needed
 
-### 5.3 COM and lifetime management (MUST)
+**Rule:** Capabilities must be captured in a capability struct and gate feature usage.
+
+### 3) COM & Lifetime Management (Mandatory)
 - Use RAII for COM objects (`ComPtr` or equivalent).
-- No manual `Release()` except in rare, justified cases (DEC).
-- Deterministic shutdown order MUST be documented:
-  - ensure GPU is idle or fences guarantee no in-flight references before teardown.
+- Do not manually `Release()` except in rare, justified cases.
+- Ensure deterministic shutdown order: command queues → resources → device/factory.
 
-### 5.4 Synchronization model (MUST)
-- Use fences for CPU↔GPU synchronization.
-- Avoid CPU waits on hot path; use frame-latency buffers and fence-guarded reclamation.
-- If multiple queues (graphics/compute/copy) are used:
-  - define cross-queue ownership and sync,
-  - use fences or queue sync primitives explicitly.
+**Rule:** Resource lifetime must be validated with leak reporting in debug builds.
 
-### 5.5 Resource states and barriers (MUST)
-- Implement explicit per-resource state tracking (DX12 requires this).
+### 4) Synchronization Model (Mandatory)
+#### 4.1 Fences
+- Use fences for GPU/CPU synchronization.
+- Avoid CPU waits on hot path; batch work and use frame-latency buffers.
+
+#### 4.2 Multi-queue usage
+If using multiple queues (graphics/compute/copy):
+- define ownership model and how resources move between queues
+- use fences to synchronize between queues
+
+**Rule:** Cross-queue sync must be explicit and documented.
+
+### 5) Resource States & Barriers (Mandatory)
+#### 5.1 State tracking
+- Implement explicit per-resource state tracking.
 - Track at least:
-  - `D3D12_RESOURCE_STATES` current state
-  - whether tracking is per-resource vs per-subresource (choose and enforce)
-- Batch barriers; avoid “transition to COMMON everywhere” anti-pattern.
-- Every usage MUST be preceded by correct state transition unless proven-safe.
+  - current `D3D12_RESOURCE_STATES`
+  - whether state is per-subresource or whole resource (choose one model and justify)
+  - pending transitions for batching
 
-### 5.6 Descriptor heaps and binding strategy (MUST)
-Blueprint MUST choose a descriptor strategy:
-- CPU staging heaps + GPU-visible ring heap, OR
-- global GPU-visible heap with suballocation, OR
-- per-frame heap reset model.
+#### 5.2 Barrier batching
+- Batch barriers to reduce overhead.
+- Prefer correct minimal transitions; avoid “transition to COMMON everywhere” patterns.
+
+**Rule:** Every resource usage must be preceded by a correct state transition (or a proven-safe implicit state).
+
+### 6) Descriptor Heaps & Binding Strategy (Mandatory)
+Blueprint must choose a descriptor strategy:
+- CPU-only staging heaps + GPU-visible ring heap
+- Global GPU-visible heap with suballocation
+- Per-frame descriptor heap resets
 
 Rules:
-- No per-draw descriptor allocations.
-- Stable root signatures (treat changes as high-impact).
-- Descriptor heap exhaustion must be detectable and handled gracefully (error or fallback).
+- Avoid allocating descriptors per draw call.
+- Prefer descriptor caching and stable root signatures.
 
-### 5.7 Pipeline state and shader strategy (MUST)
-- Shader compilation policy MUST be defined:
-  - offline to DXIL recommended for shipping,
-  - runtime compilation allowed only for dev tools unless DEC.
-- PSO creation MUST not occur on hot path; cache PSOs keyed by:
-  - shader bytecode hashes + render state + root signature.
-- Optional disk cache MUST define invalidation rules (driver change, shader change, version).
+**Root signature rule:** keep root signatures stable; changes can be breaking for pipeline caches and shader compatibility.
 
-### 5.8 Command lists and allocators (MUST)
-- Use per-thread/per-frame command allocators to avoid contention.
-- Reset allocators only after GPU completion (fence-guarded).
-- Clearly define frame contexts.
+### 7) Pipeline State & Shader Strategy (Mandatory)
+#### 7.1 Shader compilation
+Blueprint must decide:
+- offline compilation to DXIL (recommended for shipping)
+- runtime compilation only for dev tools (if needed)
 
-### 5.9 Swap chain and present (if applicable) (MUST)
-- Use flip model swap chain (recommended) unless constraints require otherwise (DEC).
-- Resize handling MUST:
-  - wait for safe point (fence),
-  - release back buffers,
-  - resize buffers,
-  - recreate RTVs/DSVs,
-  - restore rendering state.
+#### 7.2 PSO caching
+- Cache PSOs keyed by shader + render state.
+- Avoid PSO creation on hot path.
+- Consider disk cache for PSOs (optional) and define invalidation rules.
 
-### 5.10 Debugging and diagnostics (SHOULD)
-- Enable D3D12 debug layer in dev/CI builds.
+### 8) Command Lists & Allocators
+- Use per-thread command allocators and command lists (or per-frame-per-thread).
+- Reset allocators only after GPU has finished using them (tracked via fences).
+- Define frame contexts and reuse resources.
+
+**Rule:** Command allocator reset must be fence-guarded.
+
+### 9) Swap Chain & Present (If applicable)
+- Use DXGI swap chain appropriate for the app (flip model recommended).
+- Handle resize robustly:
+  - wait for GPU idle or safe point
+  - release back buffers
+  - resize buffers
+  - recreate RTVs
+
+**Rule:** Resize must be leak-free and validated in debug builds.
+
+### 10) Debugging & Diagnostics (Recommended)
+#### 10.1 Debug layer
+- Enable D3D12 debug layer in dev/ci builds.
+- Enable GPU-based validation optionally (slow; use when diagnosing).
+
+#### 10.2 DRED
 - Integrate DRED (Device Removed Extended Data) for device removed diagnostics.
-- Name resources and command lists in debug builds.
-- PIX event markers SHOULD be used in debug builds.
+- On device removed, capture and log DRED data if possible.
 
-### 5.11 Error handling and device removed (MUST)
-- Check all HRESULTs.
-- Map HRESULT → canonical errors; preserve HRESULT as `subcode`.
-- Handle `DXGI_ERROR_DEVICE_REMOVED/RESET` via explicit policy:
-  - capture DRED, log, and either recover or fail-fast.
+#### 10.3 Naming
+- Name resources and command lists in debug builds for easier debugging.
 
-### 5.12 Threading model (MUST)
-Blueprint MUST define:
-- which threads record command lists,
-- submission thread model,
-- locking strategy for shared caches (PSO, descriptor allocators).
+**TEMP-DBG rule:** Any ad-hoc debug prints must follow `temp_dbg_policy.md`.
+
+### 11) Error Handling (Mandatory)
+- Map `HRESULT` to canonical errors per `error_handling_playbook.md`.
+- Preserve raw `HRESULT` as `subcode`.
+- Handle device removed/reset (`DXGI_ERROR_DEVICE_REMOVED`, `DXGI_ERROR_DEVICE_RESET`) with an explicit recovery policy:
+  - recreate device/resources OR fatal exit
+  - document in the Blueprint.
+
+### 12) Threading Model (Mandatory)
+Blueprint must define:
+- which threads record command lists
+- how submissions are synchronized
+- locking strategy for shared caches (PSO cache, descriptor allocators)
 
 Rules:
-- Avoid global locks on hot path.
-- Prefer per-thread contexts and lock-free submission queues if needed.
+- Avoid global locks on hot paths.
+- Prefer per-thread recording contexts and lock-free submission queues if needed.
 
-### 5.13 DX12 testing checklist (MUST)
-- init smoke: factory/adapter/device creation
-- queue + fence correctness test
-- resource create/destroy stress + leak check
-- barrier correctness smoke
-- swapchain present + resize (if applicable)
-- device removed handling (as feasible; at least simulated error injection path)
+### 13) Testing Requirements (Mandatory)
+Define [TEST-XX] entries in Blueprint for:
+- init smoke: adapter/device creation
+- command queue + fence correctness test
+- resource create/destroy stress (leak detection)
+- barrier correctness smoke (render/compute pass validation)
+- swapchain present + resize stress (if applicable)
+- device removed handling strategy test (as feasible)
+
+Recommended:
+- headless/offscreen path for CI-friendly rendering tests.
+
+### 14) Quick Checklist
+- [ ] DX12 backend isolated in `<proj>_dx12` target and folder
+- [ ] deterministic adapter selection and capability gating
+- [ ] explicit resource state tracking + barrier batching
+- [ ] descriptor heap strategy avoids per-draw allocations
+- [ ] PSO caching and offline shader compilation policy defined
+- [ ] debug layer + DRED integrated for diagnostics (dev builds)
+- [ ] canonical error mapping with HRESULT subcodes
+- [ ] tests cover init/leaks/barriers/resize/device removed handling
 
 ---
 
-## 6. Vulkan Backend Rules (Normative)
+## Vulkan Backend Rules (Normative)
 
-### 6.1 Backend boundary (MUST)
-- Vulkan code MUST live under a dedicated backend target and directory (e.g., `/src/backends/vulkan/`).
-- Core/public headers MUST NOT include `<vulkan/vulkan.h>` unless explicitly part of public API.
+### 1) Backend Boundary (Mandatory)
+- Vulkan code must live under a dedicated backend target (e.g., `<proj>_vk`) and directory (e.g., `/src/backends/vulkan/`).
+- Core must depend on backend via an interface (factory/registry). Backend must not leak Vulkan types into core/public headers unless explicitly part of the public API.
 
-### 6.2 Loader/dispatch strategy (MUST)
-Blueprint MUST choose one approach and enforce it:
-- platform loader directly, OR
-- a loader helper (e.g., volk) (allowed if dependency policy approves)
+**Rule:** Public headers under `/include/<proj>/` should not include `<vulkan/vulkan.h>` unless the SDK explicitly exposes Vulkan objects.
 
-Rules:
-- Dispatch loading MUST be done once, thread-safe, and deterministic.
+### 2) Instance/Device Creation Policy
+#### 2.1 Loader & dispatch
+- Use volk or the platform loader directly, but **codify one approach** in the Blueprint.
+- Ensure function pointers are loaded once and shared safely.
 
-### 6.3 Instance/device creation policy (MUST)
-- Separate “required” vs “optional” instance extensions/layers.
-- Debug builds SHOULD enable:
-  - `VK_EXT_debug_utils`
-  - validation layers (when available)
-- Physical device selection MUST be deterministic:
-  - define preference order (discrete vs integrated, VRAM, vendor allow/deny),
-  - allow explicit selection (UUID/pci bus id where possible),
-  - log selected device and key caps.
+#### 2.2 Instance extensions/layers
+- Separate “required” vs “optional” extensions.
+- Validation layers are enabled only in dev/ci configs or via runtime flag.
 
-### 6.4 Feature/extension gating (MUST)
-- Every optional feature/extension must be checked and stored in capability struct.
+Recommended minimum instance extensions (platform-dependent):
+- `VK_KHR_surface` + platform surface extension (Win32/Xcb/Xlib/Wayland/Metal via MoltenVK if used)
+- `VK_EXT_debug_utils` (debug builds)
+
+#### 2.3 Physical device selection
+Selection must be deterministic and documented:
+- Prefer discrete GPUs (unless overridden).
+- Require minimum Vulkan version and feature set.
+- Prefer required extensions and features; reject devices that do not support them.
+
+**Rule:** Device selection must be configurable and log the chosen device and feature set.
+
+### 3) Feature/Extension Gating (Mandatory)
+- Every optional feature/extension must be checked and stored in a capability struct.
 - All usage sites must branch via capability flags.
-- If `VK_KHR_portability_subset` (MoltenVK) is in scope, explicitly document constraints and required subset features.
 
-### 6.5 Memory allocation (MUST)
-Blueprint MUST choose allocation strategy:
-- VMA (Vulkan Memory Allocator) recommended if allowed, OR
-- custom allocator documented with:
-  - memory type selection rules
-  - suballocation strategy
-  - fragmentation mitigation
-  - alignment guarantees
+**Rule:** Never assume an extension is present because “most GPUs have it”.
+
+### 4) Memory Allocation (Recommended)
+#### 4.1 Allocator choice
+- Prefer Vulkan Memory Allocator (VMA) unless explicitly forbidden.
+- If not using VMA, document your allocator strategy (pools/arenas) and memory type selection rules.
+
+#### 4.2 Allocation rules
+- Avoid per-frame allocations on the hot path.
+- Prefer pooling and suballocation.
+- Use dedicated allocations only when justified (very large resources, aliasing constraints, etc.).
+
+#### 4.3 Mapping rules
+- For frequently updated buffers, prefer persistently mapped staging or host-visible memory (depending on performance and platform).
+- Explicitly define coherency handling (flush/invalidate) when memory is non-coherent.
+
+### 5) Synchronization & Hazards (Mandatory)
+#### 5.1 Synchronization model
+Blueprint must choose one:
+- Classic barriers + semaphores/fences
+- Vulkan 1.3 synchronization2 (`VK_KHR_synchronization2`) preferred where available
+
+#### 5.2 Resource state tracking
+- Prefer an explicit state tracker (per resource) to avoid incorrect barriers.
+- Track:
+  - last access type (read/write)
+  - pipeline stages
+  - access masks
+  - image layouts (for images)
+
+#### 5.3 Queue ownership
+- If multiple queues are used (graphics/compute/transfer), define:
+  - when ownership transfers occur
+  - queue family indices and transitions
+- If only one graphics queue is used, explicitly state “single-queue model” (simpler, often fine).
+
+**Rule:** Any cross-queue resource use must have explicit synchronization and ownership correctness.
+
+### 6) Command Buffers & Pools
+- Use per-thread command pools (or per-frame-per-thread) to avoid contention.
+- Prefer resettable pools and reuse command buffers.
+- Clearly define “frame lifecycle”:
+  - acquire image → record → submit → present
+  - fences/semaphores timeline
+
+**Rule:** Command pool ownership is thread-affine; never reset/allocate from the same pool concurrently.
+
+### 7) Descriptor Management (Recommended)
+Blueprint must choose a descriptor strategy:
+- Descriptor pool per frame with bulk reset
+- Global pools + suballocation
+- Descriptor indexing (`VK_EXT_descriptor_indexing`) if required/available
 
 Rules:
-- Avoid per-frame allocations on hot path.
-- Define coherent vs non-coherent mapping rules (flush/invalidate).
-- Staging uploads MUST define lifetime and sync boundaries explicitly.
+- Avoid allocating descriptors per draw call.
+- Prefer descriptor set caching or bindless (if supported and worth it).
+- Keep layout stable across versions where possible; treat layout changes as potential breaking changes for pipelines.
 
-### 6.6 Synchronization and hazards (MUST)
-Blueprint MUST choose:
-- classic barriers + semaphores/fences, OR
-- synchronization2 (Vulkan 1.3 / `VK_KHR_synchronization2`) preferred where available.
+### 8) Pipeline Management
+#### 8.1 Pipeline cache
+- Use `VkPipelineCache` and persist cache to disk if beneficial (optional).
+- Define cache invalidation rules (driver changes, versioning).
+
+#### 8.2 Pipeline creation
+- Avoid pipeline creation on the render hot path.
+- Precompile or async-compile pipelines where appropriate; define fallback behavior.
+
+### 9) Swapchain & Present (If applicable)
+- Handle `VK_ERROR_OUT_OF_DATE_KHR` and `VK_SUBOPTIMAL_KHR` robustly.
+- Recreate swapchain on resize and surface changes.
+- Ensure resources dependent on swapchain images are recreated consistently.
+
+**Rule:** Swapchain recreation must be safe and leak-free, validated by ASan/valgrind where feasible.
+
+### 10) Debugging & Diagnostics (Recommended)
+- Use `VK_EXT_debug_utils` with labeled regions and object names in debug builds.
+- Integrate with the project logging policy (no printf spam).
+- Provide toggles for:
+  - validation layers
+  - GPU-assisted validation (if used)
+  - synchronization validation (helpful)
+
+**TEMP-DBG rule:** Any ad-hoc Vulkan debug prints must follow `temp_dbg_policy.md`.
+
+### 11) Error Handling (Mandatory)
+- Map `VkResult` to canonical errors per `error_handling_playbook.md`.
+- Preserve the raw `VkResult` as `subcode`.
+- Treat `VK_ERROR_DEVICE_LOST` as a distinct, high-severity error with explicit recovery policy:
+  - either “fatal and recreate device” (if supported) or “fatal exit”
+  - document the choice in the Blueprint.
+
+### 12) Threading Model (Mandatory)
+Blueprint must state:
+- Which Vulkan objects are accessed from which threads.
+- Whether command recording is multi-threaded.
+- Locking strategy for shared caches (pipeline cache, descriptor caches).
 
 Rules:
-- Maintain explicit tracking of:
-  - pipeline stages/access masks
-  - image layouts
-  - read/write hazards
-- Queue ownership transfers MUST be explicit if multi-queue or multi-family.
-- If single-queue model is used, state it explicitly.
+- Avoid global locks on hot paths.
+- Prefer per-thread resources and lock-free queues for submission (if needed).
 
-### 6.7 Command buffers and pools (MUST)
-- Use per-thread command pools (thread-affine).
-- Avoid concurrent use of same pool.
-- Define per-frame lifecycle (acquire → record → submit → present) including fence/semaphore ownership and reset timing.
+### 13) Cross-Platform Notes
+- Windows: Win32 surface; WSI nuances.
+- Linux: X11 vs Wayland surfaces; document supported WSI paths.
+- macOS: Vulkan typically via MoltenVK; document limitations and required extensions/features.
 
-### 6.8 Descriptor management (MUST)
-Blueprint MUST choose descriptor strategy:
-- per-frame descriptor pools with bulk reset, OR
-- global pools with suballocation, OR
-- descriptor indexing / bindless (requires explicit capability gating).
+**Rule:** If targeting macOS with Vulkan, explicitly document MoltenVK constraints and the feature subset you rely on.
 
-Rules:
-- No per-draw descriptor set allocation.
-- Cache descriptor sets or use bindless with stable layouts.
-- Layout changes are high-impact; treat as versioned changes with migration notes.
+### 14) Testing Requirements (Mandatory)
+Define [TEST-XX] entries in Blueprint for:
+- smoke init test: instance/device creation
+- swapchain create/draw/present (if applicable)
+- resource creation and destruction stress (leak detection)
+- synchronization validation runs (dev/ci)
+- device-lost simulation strategy (if feasible)
 
-### 6.9 Pipeline management (MUST)
-- Pipeline creation MUST not happen on hot path.
-- If using `VkPipelineCache`, define:
-  - whether persisted to disk,
-  - invalidation rules (driver, version, shader changes),
-  - portability constraints.
+Recommended:
+- a headless mode for CI (no window system) when possible.
 
-### 6.10 Swapchain and present (if applicable) (MUST)
-- Robustly handle:
-  - `VK_ERROR_OUT_OF_DATE_KHR`
-  - `VK_SUBOPTIMAL_KHR`
-- Swapchain recreation MUST be leak-free and fence-guarded.
-- Define supported WSI paths:
-  - Windows (Win32)
-  - Linux (X11/Wayland)
-  - macOS via MoltenVK (if applicable) with explicit limitations
-
-### 6.11 Debugging and diagnostics (SHOULD)
-- Use `VK_EXT_debug_utils`:
-  - object naming
-  - debug labels/regions
-- Validation layers SHOULD be enabled in dev/CI configs.
-- Consider synchronization validation in debug configurations (document overhead).
-- RenderDoc integration SHOULD be documented for Vulkan.
-
-### 6.12 Error handling and device lost (MUST)
-- Check all `VkResult` returns.
-- Map `VkResult` → canonical errors; preserve VkResult as `subcode`.
-- Treat `VK_ERROR_DEVICE_LOST` as distinct:
-  - explicit recovery or fail-fast policy,
-  - define what state can be reconstructed.
-
-### 6.13 Vulkan testing checklist (MUST)
-- init smoke: instance/device creation
-- command submit smoke (offscreen)
-- resource create/destroy stress
-- sync correctness smoke (barriers + semaphores)
-- swapchain present/resize (if applicable)
-- device-lost policy test (as feasible; at minimum simulated failure path)
+### 15) Quick Checklist
+- [ ] Vulkan backend isolated in `<proj>_vk` target and folder
+- [ ] deterministic device selection with capability gating
+- [ ] allocator strategy defined (VMA or custom)
+- [ ] synchronization model and resource state tracking defined
+- [ ] descriptor and pipeline strategies avoid hot-path allocations/creation
+- [ ] robust swapchain recreation (if applicable)
+- [ ] VkResult mapped to canonical errors (subcode preserved)
+- [ ] debug utils integrated in debug builds
+- [ ] tests cover init/smoke/leaks/sync validation
 
 ---
 
-## 7. Metal Backend Rules (Normative)
+## Metal Backend Rules (Normative)
 
-### 7.1 Backend boundary and Objective‑C++ isolation (MUST)
-- Metal backend MUST be isolated in its own target and directory (e.g., `/src/backends/metal/`).
-- Objective‑C++ MUST be isolated to `.mm` files in the Metal backend target.
-- Core/public headers MUST NOT include Metal or ObjC headers.
+### 1) Backend Boundary & Objective-C++ Isolation (Mandatory)
+- Metal code must live under a dedicated backend target (e.g., `<proj>_mtl`) and folder (e.g., `/src/backends/metal/`).
+- All Objective-C++ must be isolated to `.mm` files inside the Metal backend target.
+- Core and other backends must not include `<Metal/Metal.h>` or any Obj-C headers.
 
-### 7.2 Device and capability gating (MUST)
-- Default device:
-  - `MTLCreateSystemDefaultDevice()` (or equivalent)
-- If multiple devices exist, provide deterministic selection via config and log chosen device.
+**Rule:** Public headers under `/include/<proj>/` must not expose Metal types unless the SDK explicitly designs for Metal-native integration.
+
+### 2) Device & Feature Set Policy
+#### 2.1 Device selection
+- Use `MTLCreateSystemDefaultDevice()` by default.
+- If multiple devices exist, allow selection via config and log the chosen device name.
+
+#### 2.2 Feature gating
 - Gate functionality based on:
-  - `supportsFamily:` (Apple GPU family)
+  - `supportsFamily:` / feature sets
   - resource limits (threads per threadgroup, buffer alignment)
   - pixel format support
+- Store capabilities in a backend capability struct.
 
-Store capabilities in an immutable capability struct.
+**Rule:** No assumptions; capability checks must drive code paths.
 
-### 7.3 Resource lifetime and ownership (MUST)
-- Wrap Metal objects in RAII:
+### 3) Resource Lifetime & Ownership (Mandatory)
+- Use RAII wrappers for:
   - `id<MTLDevice>`, `id<MTLCommandQueue>`, `id<MTLBuffer>`, `id<MTLTexture>`, `id<MTLRenderPipelineState>`, etc.
-- Wrappers should be movable and avoid exposing ObjC retain/release semantics outside backend.
-- Ensure deterministic shutdown and fence/handler completion before destruction.
+- Ensure wrappers are movable, non-copyable unless explicitly needed.
+- Do not leak Objective-C reference counting semantics into core; keep it encapsulated.
 
-### 7.4 Command submission model (MUST)
-- Define per-frame lifecycle:
-  - acquire drawable (if presenting) → encode → commit → present → completion tracking
-- Completion handling MUST be explicit (completion handlers for GPU completion).
-- Avoid blocking waits on hot path.
+**Rule:** All resources created must have deterministic destruction and be stress-tested for leaks.
 
-### 7.5 Synchronization and hazards (MUST)
-Metal is more implicit but you MUST define correctness rules:
-- CPU↔GPU visibility for buffers:
-  - `storageModeShared` vs `storageModeManaged` (macOS) rules
-  - `didModifyRange` and synchronization blits where required
-- Resource hazard tracking:
-  - define encoder sequencing and resource usage patterns
-  - if using heaps/argument buffers, document hazard implications
+### 4) Command Submission Model
+#### 4.1 Command queue usage
+- Typically use a single `MTLCommandQueue` per device.
+- If multiple queues are used, document why and how they are synchronized.
 
-### 7.6 Buffer updates and staging (MUST)
-- Avoid per-draw allocations.
-- Use ring buffers with per-frame offsets for dynamic constants.
-- Document alignment requirements and padding strategy.
+#### 4.2 Frame lifecycle
+Define a clear per-frame lifecycle, e.g.:
+- begin frame → acquire drawable (if present) → encode → commit → present → completion handling
 
-### 7.7 Pipeline and shader strategy (MUST)
-Blueprint MUST decide:
-- precompiled `.metallib` (recommended for shipping), OR
-- runtime compilation (allowed for dev; shipping requires DEC + perf gates)
+#### 4.3 Completion handling
+- Prefer completion handlers for async tracking.
+- For CPU/GPU sync, avoid blocking waits on hot paths.
+
+**Rule:** The Blueprint must define how you wait for GPU work (if ever) and where (e.g., shutdown, resize, resource reclaim).
+
+### 5) Synchronization & Hazards
+Metal is largely implicit but you must still enforce correctness:
+- Manage resource hazards by correct encoder usage and resource options.
+- For shared CPU/GPU buffers:
+  - decide between `storageModeShared` and `storageModeManaged` (macOS)
+  - define flush/invalidate steps when required (`didModifyRange`, blit sync)
+
+**Rule:** The Blueprint must define how CPU-written data becomes visible to GPU and vice versa.
+
+### 6) Buffer Updates & Staging (Recommended)
+- For frequent updates:
+  - ring buffers in `storageModeShared` (Apple silicon often performs well)
+  - double/triple buffering by frame
+- Avoid per-draw buffer allocations.
+- Track alignment requirements (e.g., constant buffer alignment) and pad accordingly.
+
+### 7) Pipeline & Shader Strategy (Mandatory)
+#### 7.1 Shader compilation
+Blueprint must decide:
+- precompiled `.metallib` bundled with app, OR
+- runtime compilation from MSL sources (discouraged for shipping)
+
+#### 7.2 Pipeline state caching
+- Cache pipeline states keyed by shader + render state.
+- Avoid pipeline creation on the hot path.
+
+#### 7.3 Argument buffers (Optional)
+If using argument buffers:
+- define support requirements and fallback paths.
+- treat layout changes as potentially breaking for pipeline caches.
+
+### 8) Swapchain/Present Equivalent (If applicable)
+If rendering to a window:
+- typically via `CAMetalLayer` and `nextDrawable`.
+- handle drawable acquisition failures gracefully.
+- handle resize and layer changes safely.
+
+**Rule:** Resize and drawable recreation must be leak-free and validated by tests.
+
+### 9) Error Handling & Diagnostics (Mandatory)
+- Map Metal failures to canonical errors per `error_handling_playbook.md`.
+- Preserve backend-specific codes/messages where possible.
+- Use the project logger (no printf spam).
+
+Diagnostics:
+- Use `MTLDebugDevice` features when available (debug builds).
+- Capture validation errors where possible and route to logs.
+
+### 10) Threading Model (Mandatory)
+Blueprint must define:
+- which threads create resources
+- which threads encode command buffers
+- whether encoding is multi-threaded
 
 Rules:
-- Cache pipeline states keyed by shader + render state.
-- Avoid pipeline creation on hot path.
-- If using argument buffers:
-  - define support requirements and fallback paths,
-  - treat layout changes as versioned changes.
+- Avoid shared mutable state without clear locking.
+- Use per-thread command encoders or per-frame contexts.
 
-### 7.8 Present/resize (if applicable) (MUST)
-- Presentation typically via `CAMetalLayer` + `nextDrawable`.
-- Handle drawable acquisition failures gracefully.
-- Resize/layer changes MUST be fence/handler safe and leak-free.
+### 11) Performance Guidelines (Practical)
+- Minimize CPU overhead per draw:
+  - batch state changes
+  - reuse command buffers where feasible
+- Use resource heaps where beneficial (advanced; optional).
+- Prefer pipeline and resource reuse; avoid frequent churn.
 
-### 7.9 Debugging and diagnostics (SHOULD)
-- Use Xcode GPU Frame Capture and Metal validation in debug builds.
-- Use debug groups/labels for profiling.
-- Route validation output through project logging policy.
+### 12) Cross-Version Stability
+- Treat shader interface changes as versioned changes.
+- Keep binding layouts stable when possible.
+- If breaking changes are unavoidable, tie them to SemVer and provide MIGRATION notes.
 
-### 7.10 Error handling (MUST)
-- Map Metal failures to canonical errors:
-  - pipeline creation failure, command buffer errors, resource allocation failure
-- Preserve backend-specific diagnostics (NSError where available) in logs (redacted).
-- Define policy for command buffer failure and how it propagates.
-
-### 7.11 Metal testing checklist (MUST)
+### 13) Testing Requirements (Mandatory)
+Define [TEST-XX] entries in Blueprint for:
 - init smoke: device + command queue creation
-- resource create/destroy stress
-- buffer update correctness (CPU→GPU visibility)
-- offscreen render pass smoke (CI-friendly; recommended)
-- present/resize if applicable
+- resource create/destroy stress (leak detection)
+- buffer update correctness test (CPU→GPU visibility)
+- render pass smoke (headless or offscreen if possible)
+- resize/layer change scenario (if applicable)
 
----
+Recommended:
+- offscreen rendering path for CI-friendly tests.
 
-## 8. Cross-platform CI strategy for GPU (Normative guidance)
-
-### 8.1 CI reality constraints
-GPU runners may not exist. The blueprint MUST explicitly choose one of:
-- **Full GPU CI**: GPU hardware runners per backend (ideal).
-- **Partial CI**: build + headless init tests; deeper tests run on dedicated nightly runners.
-- **Stub gating**: build-only + strict failing-fast gate that blocks releases without manual verification on required hardware.
-
-### 8.2 Minimum CI requirements (MUST)
-Even without GPU hardware, CI MUST:
-- compile the backend on its supported OS (Vulkan Linux/Windows; DX12 Windows; Metal macOS),
-- run at least an init smoke test where possible (headless device creation),
-- run validation/lint/format gates as normal.
-
-### 8.3 Headless/offscreen recommendations
-- Vulkan: headless surface extension or offscreen rendering (no WSI); validate command submission.
-- DX12: WARP fallback may be used for smoke (DEC required; document correctness limitations).
-- Metal: offscreen texture render target (no CAMetalLayer) for smoke tests.
-
----
-
-## 9. “Must-not-do” pitfalls (Common) (Normative)
-
-The following are forbidden unless DEC + enforcement:
-- Creating PSOs/pipelines per draw call.
-- Allocating descriptors/descriptor sets per draw call.
-- Blocking CPU waits for GPU completion on hot path.
-- Using global locks around hot-path submission or binding.
-- Leaking backend headers into public headers.
-- Assuming a feature is present without capability gating.
-- Logging massive shader/resource dumps in production builds.
-
----
-
-## 10. Quick common checklist (MUST for blueprint review)
-
-- [ ] Backend isolated in dedicated target + folder
-- [ ] No GPU headers leak into public/core headers
-- [ ] Deterministic device selection with capability struct
-- [ ] Explicit ownership and fence-guarded reclamation
-- [ ] Synchronization/hazard strategy documented and implemented
-- [ ] Descriptor/binding strategy avoids per-draw allocation
-- [ ] Pipeline/PSO creation avoided on hot path; caching exists
-- [ ] Error mapping + device lost policy defined
-- [ ] Debug tooling integrated (validation layers, markers)
-- [ ] Tests: init smoke, resource stress, sync smoke; present/resize if applicable
-- [ ] CI plan chosen and enforced (full/partial/stub + failing-fast gates)
-
----
-
-## 11. Policy changes
-Changes to this file MUST be introduced via CR and MUST include:
-- updated enforcement expectations (tests/gates),
-- migration notes for affected GPU abstraction boundaries,
-- CI strategy updates if backend coverage changes.
+### 14) Quick Checklist
+- [ ] Metal backend isolated in `<proj>_mtl` target with `.mm` files
+- [ ] capability gating via feature sets/families
+- [ ] explicit CPU↔GPU visibility rules for shared/managed storage
+- [ ] pipeline caching and shader strategy (metallib) defined
+- [ ] robust drawable acquisition/resize handling (if applicable)
+- [ ] canonical error mapping and structured logging
+- [ ] tests cover init/leaks/buffer correctness/offscreen smoke

@@ -1,246 +1,159 @@
-<!-- decision_log_template.md -->
+<!-- _blueprint/knowledge/decision_log_template.md -->
 
-# Decision Log Template (Normative)
+# Decision Log Template — decision_log.md (Normative)
+This document defines the canonical, **append-only** format for recording architectural decisions.  
+It preserves long-term traceability across versions (v1.0 → v2.0 → …) and prevents “lost rationale”.
 
-This file provides the **required structure** for decision logs:
-- `/_blueprint/project/decision_log.md` (baseline)
-- `/_blueprint/vM.m/decision_delta_log.md` (overlay delta)
-
-Decision logs are the **authoritative record** of architectural and process decisions (**DEC-xxxxx**) that resolve ambiguity, select tradeoffs, and define enforceable rules.
-
-This template is **normative**: decision logs MUST follow this structure unless a higher-precedence rulefile overrides it.
+> **Rule:** `decision_log.md` is **append-only**. Never rewrite history; add new entries or addendums.
 
 ---
 
-## 1. Requirements (MUST)
-
-### 1.1 Stable IDs and immutability constraints
-
-- Every decision MUST have a stable ID `DEC-xxxxx` (see `blueprint_schema.md`).
-- IDs MUST NEVER be renumbered, reused, or reassigned.
-- Once a decision is **accepted**, its text SHOULD be treated as append-only:
-  - corrections MUST be made via:
-    - a **superseding decision**, or
-    - a **CR** (Change Request) referencing the original decision, with explicit delta notes.
-
-### 1.2 No silent decisions
-
-If ambiguity exists, the blueprint MUST NOT silently assume. Instead:
-- create a DEC with options and consequences, and
-- define enforcement (tests and/or gates).
-
-### 1.3 Enforcement is mandatory
-
-Each DEC MUST define at least one enforcement mechanism:
-- a **rule** (normative statement) and
-- at least one of:
-  - **TST** reference(s), and/or
-  - **CI gate** reference(s).
-
-If enforcement is not currently implementable, the DEC MUST:
-- include a failing-fast gate that blocks release/upgrade correctness claims until enforcement exists.
+## 1) Purpose
+- Capture **why** decisions were made, not just what was built.
+- Provide a stable reference for AI coding agents and humans.
+- Support lifecycle governance: deprecations, migrations, compatibility, performance regressions.
 
 ---
 
-## 2. File structure (MUST)
+## 2) Rules (Mandatory)
+### 2.1 Append-only
+- Existing entries must not be edited except for:
+  - fixing typos that do not change meaning
+  - adding an explicit **Addendum** section at the end of the same entry (preferred)
+- If a decision changes, create a **new** `[DEC-XX]` entry that supersedes the old one and links to it.
 
-Decision logs MUST follow this order:
+### 2.2 One decision per ID
+- Each `[DEC-XX]` should cover one major decision.
+- Do not overload a single DEC with multiple unrelated choices.
 
-1. Title and scope
-2. Decision index table(s)
-3. Status legend
-4. Decisions, in chronological order (by ID allocation sequence)
+### 2.3 Traceability linking
+Each decision must link to:
+- impacted requirements `[REQ-XX]`
+- relevant architecture rules `[ARCH-XX]`
+- affected API/ABI rules `[API-XX]` (if any)
+- memory/concurrency/build/test/versioning rules as applicable
 
-### 2.1 Title and scope header (MUST)
+### 2.4 Alternatives are required
+- Always include at least one alternative and a short rejection rationale.
 
-The decision log MUST begin with:
-
-- A `#` title
-- A short paragraph describing scope:
-  - baseline: covers entire project baseline
-  - delta: covers changes introduced in this overlay version
-
-### 2.2 Decision index tables (MUST)
-
-Provide:
-- an **Index by ID** (ascending)
-- an **Index by Topic Tag** (optional but recommended)
-
-Index entries MUST include:
-- ID
-- Title
-- Status
-- Date (YYYY-MM-DD)
-- A short “Impacts” summary (IDs of REQ/ARCH/API/BUILD/TST affected)
-
-**Index by ID example**
-
-| ID | Title | Status | Date | Impacts |
-|---|---|---|---|---|
-| DEC-00001 | Choose baseline toolchain and standard | accepted | 2025-01-15 | BUILD-00001, REQ-00003 |
-| DEC-00002 | Error handling model | accepted | 2025-01-16 | API-00010, REQ-00007 |
-
-### 2.3 Status legend (MUST)
-
-Include this legend verbatim (may extend with additional statuses only via DEC + gate):
-
-- **proposed**: under consideration; not yet binding
-- **accepted**: binding; must be enforced by tests/gates
-- **superseded**: replaced by a newer decision (must link to superseding DEC)
-- **rejected**: considered and explicitly not chosen (document why)
+### 2.5 Consequences must be explicit
+- Include both pros and cons.
+- Include risks and mitigations (or follow-up CRs).
 
 ---
 
-## 3. Decision entry schema (MUST)
+## 3) Index (Optional but recommended)
+Maintain a simple list for fast navigation:
 
-Each decision entry MUST use the following headings and fields.
-
-### 3.1 Canonical decision block
-
-```md
-## DEC-00000 — <Title>
-**Status:** proposed|accepted|superseded|rejected  
-**Date:** YYYY-MM-DD  
-**Tags:** BACKEND:<...> PLATFORM:<...> TOPIC:<...> (optional; if used, follow tag_map.yaml)  
-
-### Context
-Explain the ambiguity, constraints, and why a decision is needed.
-
-### Options
-- **A) <Option name>**
-  - Pros:
-  - Cons:
-  - Consequences:
-- **B) <Option name>**
-  - Pros:
-  - Cons:
-  - Consequences:
-(Include more options as needed.)
-
-### Decision
-State the chosen option and rationale. If “no decision”, keep status proposed and define next steps + gate.
-
-### Rules (Normative)
-List binding rules derived from this decision. Use bullet points; each rule SHOULD be individually testable.
-
-### Enforcement
-- **Tests:** TST-xxxxx, ...
-- **CI Gates:** BUILD-xxxxx and/or TST-xxxxx and/or explicit job names
-- **Validator hooks:** (if applicable) references to composer/validator checks
-
-### Compatibility / Migration / Deprecation
-- Compatibility notes (source/ABI/behavior)
-- Migration steps (if needed)
-- Deprecations introduced (if any)
-
-### Impacts / Traceability
-- **Requirements:** REQ-xxxxx, ...
-- **Architecture:** ARCH-xxxxx, ...
-- **APIs:** API-xxxxx, ...
-- **Build/Tooling:** BUILD-xxxxx, ...
-- **Other Decisions:** DEC-xxxxx (links)
-```
-
-### 3.2 Additional requirements
-
-- **Options** MUST include at least 2 choices unless truly binary. If binary, explicitly state why.
-- **Decision** MUST be unambiguous and non-contradictory with existing accepted decisions. If it contradicts, it MUST supersede.
-- If **superseded**, the entry MUST include:
-  - `**Superseded by:** DEC-xxxxx`
-- If **rejected**, it MUST include:
-  - `**Rejection reason:** ...`
+- [DEC-01] <title> (v1.0) — status: Active
+- [DEC-02] <title> (v1.0) — status: Active
+- [DEC-03] <title> (v1.1) — status: Superseded by [DEC-07]
+- …
 
 ---
 
-## 4. Delta decision log rules (overlay) (MUST)
-
-For `/_blueprint/vM.m/decision_delta_log.md`:
-
-- Only include decisions that:
-  - are new in this overlay, or
-  - supersede/modify prior decisions.
-- Every supersession MUST include:
-  - old DEC ID
-  - new DEC ID
-  - reason for supersession
-  - enforcement changes
-
-Additionally, include a top section:
-
-```md
-## Delta Summary
-- New decisions: DEC-..., ...
-- Superseded: DEC-old → DEC-new
-- Rejected: DEC-..., ...
-- Enforcement changes: ...
-```
+## 4) Decision Entry Template
+Copy/paste for each new entry:
 
 ---
 
-## 5. Common decision categories (recommended)
+### [DEC-XX] <Short Decision Title>
+- **Date:** YYYY-MM-DD
+- **Status:** Active | Superseded | Deprecated
+- **Introduced In:** v<MAJOR>.<MINOR>.<PATCH>
+- **Supersedes:** (optional) [DEC-YY]
+- **Superseded By:** (optional) [DEC-ZZ]
+- **Related CRs:** (optional) [CR-XXXX], [CR-YYYY]
+- **Scope:** (module/component/subsystem)
 
-These topics commonly require DEC entries:
+#### Context
+What is the problem and what constraints drive this decision?
+- Constraints: [REQ-..], [ARCH-..], [VER-..] (list)
+- Assumptions: [META-..] (list)
 
-- Toolchain / platform matrix / C++ standard version
-- Error handling model (exceptions vs expected-like vs status codes)
-- Threading model and synchronization primitives
-- Public API and ABI policy across platforms
-- Memory ownership/lifetime model
-- Logging/observability budgets and redaction rules
-- Determinism controls (time source, scheduling assumptions, FP controls)
-- Packaging/distribution and internal-only packaging exceptions
-- GPU backend selection and abstraction boundaries (if TOPIC=gpu)
-- Dependency policy and vendoring strategy
-- Testing strategy and CI matrix (sanitizers, fuzzing, perf gates)
-- Release process (SemVer interpretation, migration policies)
+#### Decision
+State the decision in one clear sentence, then provide details.
+- Decision statement:
+- Detailed notes:
+  - Interfaces affected: [API-..] (if any)
+  - Memory/ownership impact: [MEM-..]
+  - Concurrency impact: [CONC-..]
+  - Build/tooling impact: [BUILD-..]
+  - Testing impact: [TEST-..]
 
----
+#### Alternatives Considered
+- **Alt A:** <summary> — rejected because <reason>
+- **Alt B:** <summary> — rejected because <reason>
 
-## 6. Minimal example (copy/paste)
+#### Consequences
+**Positive:**
+- + …
+- + …
 
-```md
-## DEC-00001 — Choose baseline toolchain and C++ standard
-**Status:** accepted  
-**Date:** 2025-01-15  
-**Tags:** PLATFORM:xplat TOPIC:build  
+**Negative / Trade-offs:**
+- - …
+- - …
 
-### Context
-We need a reproducible cross-platform toolchain and a default language standard compatible with our dependencies.
+**Risks:**
+- Risk 1: <description> — mitigation: <plan or follow-up CR>
+- Risk 2: <description> — mitigation: <plan or follow-up CR>
 
-### Options
-- **A) C++20 + CMake 3.28+ + Ninja (default)**
-  - Pros: strong compiler support; modern features; good tooling
-  - Cons: some older platforms may require upgrades
-  - Consequences: minimum OS/compiler baselines must be pinned
-- **B) C++17 + CMake 3.20+**
-  - Pros: wider legacy support
-  - Cons: less expressive; more custom utilities; fewer std features
-  - Consequences: higher maintenance burden
+#### Verification
+How do we know this decision is correct?
+- Tests/benchmarks: [TEST-..]
+- Quality gates impacted: (sanitizers, perf thresholds, etc.)
+- Observable metrics: (latency, memory, throughput, etc.)
 
-### Decision
-Choose A) C++20 with CMake presets and Ninja as the primary generator; keep MSBuild via presets on Windows.
-
-### Rules (Normative)
-- The repository MUST build with C++20 as the default standard.
-- All CI jobs MUST use CMakePresets.json configure/build/test presets.
-- Platform matrix MUST include ubuntu/windows/macos jobs.
-
-### Enforcement
-- Tests: TST-00010 (configure/build/test via presets)
-- CI Gates: BUILD-00001 (xplat matrix), BUILD-00002 (presets required)
-
-### Compatibility / Migration / Deprecation
-No breaking API changes. Existing code must be compatible with C++20.
-
-### Impacts / Traceability
-- Requirements: REQ-00003
-- Build/Tooling: BUILD-00001, BUILD-00002
-```
+#### Notes / Addendum (optional)
+Use this section for later clarifications without rewriting history.
 
 ---
 
-## 7. Template usage notes (non-normative)
+## 5) Status & Supersession Guidance
+### 5.1 Superseded decisions
+When replacing a decision:
+1) Create a new `[DEC-XX]` entry describing the new choice.
+2) In the new entry, set **Supersedes** to the old DEC.
+3) In the old entry, set **Superseded By** (allowed minimal edit) or add an Addendum linking forward.
 
-- Keep decisions short but complete; prefer bullet lists.
-- If an option is risky, call it out explicitly and add extra tests/gates.
-- When a decision impacts performance budgets or determinism, add benchmark and regression gates.
+### 5.2 Deprecations
+If a decision introduces deprecation policies or removal targets, link to:
+- [VER-04] deprecation rules
+- Migration documentation requirements (e.g., `MIGRATION.md`)
+- Any affected [API-XX] or public symbols
+
+---
+
+## 6) Example (Brief)
+### [DEC-01] Use PIMPL for stable public ABI surface
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.0
+- **Related CRs:** [CR-0001]
+- **Scope:** core/public API
+
+#### Context
+Need to reduce ABI breakage risk for downstream consumers.
+- Constraints: [VER-03], [API-02]
+
+#### Decision
+Use PIMPL for public classes and keep public structs POD-only.
+
+#### Alternatives Considered
+- Alt A: expose full class layout — rejected due to frequent ABI breaks
+- Alt B: C-only API — rejected due to ergonomics and C++-only features needed
+
+#### Consequences
+Positive: + ABI churn reduced  
+Negative: - slight indirection cost  
+
+#### Verification
+- ABI check in CI (if configured), plus downstream integration test.
+
+---
+
+## 7) Maintenance Checklist
+- Add new DEC for every significant choice and whenever rationale matters.
+- Keep entries concise but complete.
+- Ensure every decision references impacted IDs.
+- Avoid duplicate DEC entries for the same decision; supersede instead.

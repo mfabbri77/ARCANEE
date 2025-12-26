@@ -1,196 +1,163 @@
-<!-- error_handling_playbook.md -->
+<!-- _blueprint/knowledge/error_handling_playbook.md -->
 
 # Error Handling Playbook (Normative)
+This document standardizes **error handling** across native C++ codebases (libraries/apps), including **API/ABI boundaries**, **Python bindings**, and multi-backend graphics.  
+The goal is consistent behavior, predictable performance, and clean diagnostics.
 
-This playbook defines the **error model**, error taxonomy, propagation rules, and enforcement expectations for C++ systems governed by the DET CDD blueprint framework.
-
-It is **normative** unless overridden via DEC + enforcement.
-
----
-
-## 1. Goals
-
-- Provide consistent, predictable error behavior across subsystems.
-- Make error contracts explicit in APIs (Ch4 subsystem contracts).
-- Support performance and determinism constraints (AAA/HFT).
-- Ensure errors are testable, observable, and diagnosable.
-- Preserve ABI stability where relevant.
+> **Precedence:** Prompt hard rules → `blueprint_schema.md` → this document → project-specific constraints.
 
 ---
 
-## 2. Baseline error model (default)
-
-### 2.1 Default choice (widely recognized, rational)
-
-Default model for libraries and services:
-- Use **status/result return values** for expected failures.
-- Use **exceptions** only for:
-  - programmer errors (optional),
-  - truly exceptional, unrecoverable conditions,
-  - or when an API boundary already uses exceptions and performance constraints allow it.
-
-Because AAA/HFT often avoids exceptions for predictability:
-- `PROFILE_AAA_HFT` default is **no exceptions across public API boundaries** (DEC required to allow).
-
-A project MUST confirm the chosen model via DEC in decision log when non-trivial.
-
-### 2.2 Guiding principle
-
-- **Expected** errors: represented explicitly in return type (no throws).
-- **Unexpected** errors: assertions, terminate, or exception based on policy (DEC).
+## 1) Goals
+- Make error behavior explicit and testable.
+- Prevent exceptions or undefined behavior crossing ABI boundaries.
+- Keep hot paths fast (avoid allocations and heavy formatting in tight loops).
+- Provide high-quality diagnostics (structured logs + error codes/messages).
+- Ensure Python bindings map errors cleanly to exceptions.
 
 ---
 
-## 3. Error taxonomy (normative)
+## 2) Choose an Error Strategy (Mandatory Blueprint decision)
+In the Blueprint, decide under **[API-03]** and record rationale under **[DEC-XX]**:
 
-### 3.1 Error categories
+### Strategy A — Exceptions enabled (C++-only surface)
+- Use exceptions internally and/or in public C++ API.
+- Still **must not** throw across C ABI boundaries.
 
-Define a stable set of categories, e.g.:
-- `invalid_argument`
-- `not_found`
-- `already_exists`
-- `permission_denied`
-- `resource_exhausted`
-- `deadline_exceeded`
-- `unavailable`
-- `internal`
-- `not_implemented`
+### Strategy B — No exceptions (recommended default for SDKs/engines)
+- Compile with exceptions disabled where feasible.
+- Use `Status`/`expected<T, Error>` patterns.
 
-Projects MAY customize categories, but MUST remain stable across versions unless SemVer MAJOR change.
+### Strategy C — C ABI boundary
+- All exported functions are `noexcept` and return error codes/status handles.
 
-### 3.2 Error codes
-
-- Each error MUST have a stable **error code** string or integer.
-- Error codes MUST be:
-  - stable across patch/minor releases,
-  - only removed/renamed in MAJOR releases (or via explicit deprecation).
-
-Recommended pattern:
-- string codes: `COMPONENT_ERRORNAME` (e.g., `NET_TIMEOUT`)
-- numeric codes: enum class with explicit values (ABI-safe)
-
-### 3.3 Error payload
-
-Error payload SHOULD include:
-- code
-- human-readable message (optional)
-- optional context fields (safe to log; redacted as needed)
-
-Avoid embedding large payloads.
+**Rule:** Pick exactly one primary strategy for the public surface. Internal code may still use localized exceptions only if policy permits and they never cross module boundaries.
 
 ---
 
-## 4. API contract requirements (normative)
+## 3) Canonical Types (Recommended)
+### 3.1 ErrorCode
+Define a stable `enum class ErrorCode : uint32_t` with explicit underlying type.
+Rules:
+- Never reorder values; only append.
+- Reserve ranges per subsystem if helpful (e.g., 1000–1999 IO).
 
-Every public API (Ch4) MUST specify:
-- which errors can occur (by code/category)
-- whether errors are returned or thrown
-- whether errors are recoverable
-- whether errors are deterministic (same input → same error)
-- threading implications (errors must not depend on races)
+### 3.2 Error
+A lightweight error struct:
+- `ErrorCode code`
+- optional `uint32_t subcode` (backend-specific)
+- optional fixed-size message buffer or message pointer owned by error system
+- optional context fields (file/line only in debug builds if overhead matters)
 
-### 4.1 Return type guidance
+### 3.3 Status / expected
+Preferred options:
+- `Status` for operations returning no value
+- `Expected<T>` / `expected<T, Error>` for value-or-error
 
-Preferred patterns:
-
-- `Expected<T, Error>`-like (custom or `tl::expected`/`std::expected` when available)
-- `Status` + out-parameter (for ABI constraints)
-- `std::optional<T>` only when “no value” is the only failure signal and is unambiguous
-
-If ABI stability is critical, avoid templates in public ABI (DEC required if using).
-
----
-
-## 5. Exceptions policy (normative)
-
-### 5.1 Public API boundaries
-
-Default:
-- Libraries: do not throw exceptions across public boundaries unless DEC.
-- Applications: may use exceptions internally, but must handle at boundary.
-
-### 5.2 Exceptions and performance/determinism
-
-In `PROFILE_AAA_HFT`:
-- exceptions SHOULD be disabled for production builds where feasible
-- errors must be handled via return values
-- stack unwinding overhead and unpredictability is unacceptable on hotpath
-
-If exceptions are enabled:
-- document in DEC with benchmarks/gates verifying overhead is within budget.
-
-### 5.3 No-throw guarantees
-
-Where possible, APIs SHOULD declare `noexcept` when they cannot fail and are performance-sensitive.
+**Hot-path rule:** avoid heap allocations on failure paths that may be frequent; prefer fixed buffers or interned messages.
 
 ---
 
-## 6. Logging and observability integration (normative)
+## 4) Public API Rules (Mandatory)
+### 4.1 Never throw across boundaries
+- If exposing a C ABI or stable ABI boundary: exported functions must be `noexcept`.
+- Convert internal failures into error codes/status.
 
-- Error logs MUST include:
-  - error code
-  - component
-  - correlation_id if available
-- Error logs MUST NOT leak sensitive data (see logging policy).
-- For repeated errors, rate limit logs to avoid flooding.
+### 4.2 Ownership of error messages
+Blueprint must define one of:
+- message is copied into caller buffer (`get_last_error_message(buf, len)`)
+- message is stored in thread-local “last error” (simple, but must be documented)
+- message is returned as `{ptr,len}` with explicit lifetime rules
 
----
+**Rule:** The lifetime rules must be explicit and testable.
 
-## 7. Testing requirements (normative)
-
-Projects MUST include:
-- unit tests covering each error category used by a subsystem
-- negative tests for invalid inputs
-- tests verifying error determinism when required:
-  - same input yields same error code/message (message may allow variable context)
-- tests verifying exceptions are not thrown across boundaries when forbidden
+### 4.3 Returning errors vs logging
+- Return errors to the caller; logging is supplementary.
+- Do not log at both layers by default (avoid duplicate logs). Define a rule:
+  - libraries return errors; apps decide how/when to log.
 
 ---
 
-## 8. Mapping and translation (normative)
+## 5) Logging Integration (Tied to [REQ-02])
+- Use the approved logger (spdlog/glog) only.
+- Prefer structured logging: `event=... code=... backend=...`.
+- Avoid heavy formatting on hot paths unless the log level is enabled.
+- Never use `std::cout`/`printf` for operational logging.
 
-When crossing boundaries (e.g., OS errors, network library errors):
-- translate into the project error taxonomy
-- preserve relevant context safely
-- avoid leaking raw errno strings in public APIs (may log internally)
-
----
-
-## 9. ABI considerations (conditional)
-
-If the project exposes a stable ABI:
-- public ABI MUST avoid:
-  - throwing exceptions across boundary,
-  - types with unstable layout across compilers/stdlib (e.g., `std::string` across DLL boundary in MSVC requires care),
-  - templates as exported ABI (unless header-only).
-
-See `cpp_api_abi_rules.md` for detailed ABI policy.
+**Rule:** Error objects must be convertible to a short string for logging, but formatting must be lazy or guarded by log level.
 
 ---
 
-## 10. Widely used patterns (informative)
+## 6) Graphics Backend Error Mapping (Vulkan/Metal/DX12)
+Blueprint must define how backend errors map to canonical errors:
 
-### 10.1 Status type sketch (conceptual)
+### 6.1 Vulkan
+- Map `VkResult` to `ErrorCode` + `subcode = VkResult`.
+- Preserve `VK_ERROR_DEVICE_LOST` distinctly.
+- Validation-layer messages are diagnostics, not stable API errors.
 
-- `struct Status { ErrorCode code; std::string msg; }`
-- `StatusOr<T>` / `Expected<T, Status>`
+### 6.2 Metal
+- Map Objective-C/NS errors to canonical `ErrorCode`.
+- Avoid leaking Obj-C types into core; convert in Metal backend.
 
-Prefer `std::error_code` style if applicable, but ensure stable codes.
+### 6.3 DX12
+- Map `HRESULT` to `ErrorCode` + `subcode = HRESULT`.
+- If using DRED/Debug Layer, treat output as diagnostics.
+
+**Rule:** Canonical errors should be backend-agnostic where possible (e.g., `DeviceLost`, `OutOfMemory`, `InvalidArgument`).
 
 ---
 
-## 11. Enforcement gates (summary)
+## 7) Python Bindings Error Mapping (If applicable)
+- Map canonical errors to Python exceptions:
+  - `InvalidArgument` → `ValueError`
+  - `OutOfMemory` → `MemoryError`
+  - `NotFound` → `KeyError` or `FileNotFoundError`
+  - `PermissionDenied` → `PermissionError`
+  - fallback → `RuntimeError`
+- Include error code and short message in exception text.
+- Ensure no C++ exceptions escape the binding layer unless explicitly intended by policy.
 
-CI/validator SHOULD fail if:
-- APIs lack declared error model (Ch4 contract incomplete)
-- forbidden exception usage is detected in public headers (lint rule)
-- error codes are changed without SemVer bump/deprecation plan
-- tests for negative/error paths are missing when required
+**Rule:** Binding layer must be thin; it should not invent new error semantics.
 
 ---
 
-## 12. Policy changes
+## 8) “Last Error” Pattern (If used)
+If using thread-local last-error:
+- Each thread has its own last error.
+- Define:
+  - how it is set/cleared
+  - whether it is overwritten on success
+  - how callers retrieve it
+- Provide tests ensuring correctness under concurrency.
 
-Changes to this playbook MUST be introduced via CR and MUST include:
-- migration steps for existing APIs,
-- updated tests/gates reflecting new error model.
+**Caution:** last-error is convenient but can hide errors if callers ignore return values. Prefer explicit `Status/Expected` where feasible.
+
+---
+
+## 9) Testing Requirements (Mandatory)
+Blueprint must include [TEST-XX] entries for:
+- error code mapping tests (backend-specific mapping tables)
+- boundary tests: ensure no exceptions cross ABI boundary
+- message lifetime tests (buffers/last-error)
+- Python exception mapping tests (if bindings exist)
+- negative tests for invalid inputs (InvalidArgument)
+
+---
+
+## 10) Anti-Patterns (Avoid)
+- Using exceptions for routine control flow on hot paths.
+- Returning owning raw pointers on error paths without clear ownership.
+- Logging the same error at multiple layers by default.
+- Encoding backend-specific errors directly in public API types.
+- “Stringly-typed” errors as the only contract (strings are unstable).
+
+---
+
+## 11) Quick Checklist
+- [ ] [API-03] error strategy selected and justified via [DEC-XX]
+- [ ] Canonical ErrorCode/Error types defined (or explicitly N/A for app-only)
+- [ ] ABI boundary is noexcept and non-throwing (if applicable)
+- [ ] Vulkan/Metal/DX12 errors mapped consistently (subcode preserved)
+- [ ] Python exceptions mapping defined and tested (if applicable)
+- [ ] Tests cover error paths and message lifetimes

@@ -1,230 +1,192 @@
-<!-- cr_template.md -->
+<!-- _blueprint/knowledge/cr_template.md -->
 
-# Change Request (CR) Template (Normative)
+# Change Request Template — CR-XXXX (Normative)
+This template defines the canonical format for **Change Requests** used to evolve a project from v1.0 to v2.0 and beyond while preserving traceability, compatibility, and quality gates.
 
-A Change Request (CR) is the **only** approved mechanism for evolving the blueprint SoT (`/_blueprint/`) over time.
-CRs:
-- justify changes,
-- define explicit deltas,
-- enumerate enforcement updates (tests/gates),
-- update versioning expectations (SemVer),
-- provide migration guidance.
-
-This template is **normative** and must be used for files named `/_blueprint/vM.m/CR-XXXX.md`.
+> **Rule:** Any significant change MUST be represented as a CR (`/blueprint/cr/CR-XXXX.md`) and MUST update `/blueprint` (Blueprint + checklist) before or alongside code changes.
 
 ---
 
-## 1. CR file naming and placement
-
-### 1.1 Naming
-
-CR files MUST be named:
-- `CR-0001.md`, `CR-0002.md`, ... (4 digits, zero padded)
-
-### 1.2 Placement
-
-CR files MUST live in a version overlay directory:
-- `/_blueprint/vM.m/CR-XXXX.md`
-
-### 1.3 References
-
-Each CR MUST be referenced from:
-- the overlay’s `release.md` (CR list), and
-- any updated chapter or decision delta as applicable.
+## Header
+- **CR ID:** `[CR-XXXX]`
+- **Title:** <short, descriptive>
+- **Status:** Draft | Approved | Implemented | Rejected
+- **Owner:** <name/handle>
+- **Created:** YYYY-MM-DD
+- **Target Release:** v<MAJOR>.<MINOR>.<PATCH>
+- **Related Issues/Links:** <URLs/refs>
+- **Scope Type:** Feature | Breaking Change | Refactor | Performance | Security | Dependency | Tooling | Docs
 
 ---
 
-## 2. CR schema (MUST)
-
-Each CR MUST contain the following sections, in this order.
-
-### 2.1 Header block (MUST)
-
-```md
-# CR-0000 — <Short descriptive title>
-**Status:** draft|accepted|implemented  
-**Owner:** <team or role>  
-**Target Version:** M.m.p (must match overlay release.md “Version”)  
-**Date:** YYYY-MM-DD  
-**Related:** DEC-xxxxx, REQ-xxxxx, ARCH-xxxxx, API-xxxxx, BUILD-xxxxx, TST-xxxxx (as applicable)
-```
-
-Rules:
-- Status MUST start as `draft` and become `accepted` once approved.
-- `Target Version` MUST match the version declared in `release.md`.
-
-### 2.2 Motivation (MUST)
-
-Explain:
-- what problem is solved,
-- why now,
-- risks of not doing it,
-- constraints that shaped the proposal.
-
-### 2.3 Summary of Changes (MUST)
-
-A concise bullet list describing what will change.
-
-Example:
-
-- Add deterministic time source abstraction (`API-00110`)
-- Introduce new CI gate preventing `[TEMP-DBG]` leftovers (`BUILD-00201`)
-- Update Ch6 concurrency model to include backpressure strategy
-
-### 2.4 Detailed Deltas (MUST)
-
-Provide a structured change list, grouped by artifact:
-
-- **Blueprint chapters**
-  - `/_blueprint/project/chX_*.md` (baseline) or overlay `chX_*.md`
-  - describe edits by section/heading
-- **Rules / knowledge**
-  - list files added/modified
-- **Build / Tooling**
-  - CMake targets/presets changes
-  - new scripts (composer/validator, linters)
-- **Code changes** (if applicable)
-  - list directories/files and a short rationale
-
-Each delta SHOULD reference relevant IDs (REQ/DEC/API/TST/BUILD).
-
-### 2.5 Compatibility Impact (SemVer) (MUST)
-
-State explicitly:
-
-- **Impact type**: `PATCH | MINOR | MAJOR`
-- **Why** the chosen bump is correct, referencing SemVer rules in Ch9.
-- **Compatibility notes**:
-  - source compatibility
-  - ABI compatibility (if a library)
-  - behavior changes
-  - performance impact
-
-If impact is uncertain, record a DEC and add a gate requiring confirmation/measurement.
-
-### 2.6 Migration Plan (MUST when needed)
-
-If any user-facing behavior or API changes:
-- list step-by-step migration instructions
-- include code examples if necessary (keep short; prefer references to docs/tests)
-- identify deprecations and timelines
-- include rollback strategy if feasible
-
-### 2.7 Enforcement Plan (MUST)
-
-This is the most important section.
-
-List:
-- **New or updated tests**
-  - IDs and descriptions
-  - exact commands
-- **New or updated CI gates**
-  - IDs and descriptions
-  - failure messages and remediation hints
-- **Validator updates**
-  - checks added (e.g., schema validation, ID scan, inheritance resolution)
-- **Checklist updates**
-  - new steps in `implementation_checklist.yaml` or `checklist_delta.yaml`
-
-Every CR MUST introduce or update at least one of:
-- tests, or
-- gates, or
-- validator checks.
-
-### 2.8 Rollout Plan (MUST)
-
-Describe:
-- how changes will be implemented in phases (if relevant),
-- who owns what,
-- timeline expressed as sequence of milestones (avoid dates unless necessary),
-- what “done” means (acceptance criteria).
-
-### 2.9 Risks and Mitigations (MUST)
-
-Provide:
-- risk list (technical, schedule, correctness, performance, portability)
-- mitigation per risk (tests, gates, staged rollout)
-
-### 2.10 Alternatives Considered (MUST)
-
-List alternatives and why they were not chosen.
-If no alternatives, record a DEC explaining why.
-
-### 2.11 Open Questions (MUST if any)
-
-If any unknowns remain, list them and define failing-fast gates to prevent shipping without answers.
-
-### 2.12 Appendix (Optional)
-
-- Links
-- Design diagrams (ASCII or references)
-- Supporting benchmarks
-- Dependency/license notes
+## 1) Summary
+**One paragraph** describing *what changes* and *why*, in user/product terms.
 
 ---
 
-## 3. CR quality bar (normative checks)
+## 2) Motivation & Goals
+### 2.1 Motivation
+- What problem/opportunity does this address?
+- What user-facing or operational pain exists today?
 
-CI/validator SHOULD fail if:
-- Required sections are missing.
-- `Target Version` does not match `release.md`.
-- Compatibility impact is not specified.
-- Enforcement plan is missing tests/gates/validator changes.
-- CR is referenced from release.md but file is missing.
-- CR introduces new requirements without adding tests and checklist steps.
+### 2.2 Goals (MUST be measurable)
+- Goal A: <measurable outcome>
+- Goal B: <measurable outcome>
 
----
-
-## 4. Minimal example (copy/paste)
-
-```md
-# CR-0007 — Add CI gate for TEMP debug markers
-**Status:** draft  
-**Owner:** Build/CI  
-**Target Version:** 1.4.2  
-**Date:** 2025-02-01  
-**Related:** TEMP-DBG-00001, BUILD-00210
-
-## Motivation
-TEMP debug code must never ship; we need automated detection.
-
-## Summary of Changes
-- Add validator check scanning for “[TEMP-DBG]”
-- Add CI job “gate-temp-dbg” that fails on any hit
-
-## Detailed Deltas
-- /_blueprint/rules/temp_dbg_policy.md: define marker rule
-- /tools/blueprint/validate.py: implement scan
-- /.github/workflows/ci.yml: add job
-
-## Compatibility Impact (SemVer)
-Impact type: PATCH  
-No API change; only strengthens CI.
-
-## Migration Plan
-None.
-
-## Enforcement Plan
-- CI Gate: BUILD-00210 — gate-temp-dbg (fails if any “[TEMP-DBG]”)
-- Validator: add scan step; error includes filename+line
-- Checklist: add step “Run blueprint validator locally” referencing BUILD-00210
-
-## Rollout Plan
-1) Implement validator scan
-2) Add CI job
-3) Enable branch protection requiring the job
-
-## Risks and Mitigations
-- Risk: false positives in docs → Mitigation: restrict scan to src/include/tests by rule
-
-## Alternatives Considered
-- Pre-commit only → rejected; can be bypassed.
-```
+### 2.3 Non-Goals
+- Explicitly list what is NOT being attempted.
 
 ---
 
-## 5. Notes (non-normative)
+## 3) Impacted Blueprint IDs (Traceability)
+List all IDs impacted/introduced by this change.
 
-- Keep CRs small and composable: one intent per CR.
-- If a CR changes multiple areas, split into separate CRs unless they must land together.
-- Always tie new rules to enforcement, or the blueprint becomes aspirational rather than deterministic.
+| Category | IDs |
+|---|---|
+| Requirements | `[REQ-..]` |
+| Architecture | `[ARCH-..]` |
+| Decisions | `[DEC-..]` |
+| Memory | `[MEM-..]` |
+| Concurrency | `[CONC-..]` |
+| API/ABI | `[API-..]` |
+| Python | `[PY-..]` |
+| Build | `[BUILD-..]` |
+| Tests | `[TEST-..]` |
+| Versioning/Lifecycle | `[VER-..]` |
+
+**Rule:** If new major decisions are required, add new **[DEC-XX]** entries in `decision_log.md` and reference them here.
+
+---
+
+## 4) Compatibility & Versioning
+### 4.1 API Compatibility
+- **API breaking?** Yes/No  
+- If yes: list removed/changed symbols, behavior changes, and new alternatives.
+
+### 4.2 ABI Compatibility (if applicable)
+- **ABI breaking?** Yes/No  
+- If yes: explain what breaks (layout, vtables, symbol changes, calling conventions) and mitigation.
+
+### 4.3 SemVer Classification (MUST)
+- **This change is:** MAJOR | MINOR | PATCH  
+- Justification (tie to `[VER-01]` rules).
+
+### 4.4 Deprecations
+- Deprecations introduced (symbols/APIs), include:
+  - `since: vX.Y`
+  - `removal_target: vA.B` (or “next major”)
+  - replacement guidance.
+
+### 4.5 Migration Plan (Required if MAJOR, recommended otherwise)
+- Does this require `MIGRATION.md` updates? Yes/No
+- Provide “Before → After” code examples (brief).
+- Tooling: clang-tidy checks, scripts, or compile-time warnings (if available).
+
+---
+
+## 5) Technical Design (Concise but Concrete)
+### 5.1 Proposed Design
+- Key design points (bullets).
+- New/changed modules and boundaries.
+- Public API sketches (signatures only) if API changes.
+
+### 5.2 Data / Memory Implications
+- Ownership changes, allocator changes, layout changes.
+- Performance-critical hot paths affected.
+
+### 5.3 Concurrency Implications
+- Thread-safety changes, synchronization changes.
+- Potential races/deadlocks and mitigations.
+
+### 5.4 Alternatives Considered
+- Option 1: <summary + why rejected>
+- Option 2: <summary + why rejected>
+
+> **Rule:** If the design choice is significant, record a corresponding **[DEC-XX]** in `decision_log.md`.
+
+---
+
+## 6) Performance Impact
+### 6.1 Budgets Affected
+Reference existing budgets and specify any changes:
+- Latency: p50/p99/p999 impact
+- Throughput impact
+- Memory steady/peak impact
+- Startup impact
+- GPU budget impact (if applicable)
+
+### 6.2 Benchmarks
+- New benchmarks to add (names + what they measure).
+- Regression thresholds (what should fail CI).
+
+---
+
+## 7) Security & Reliability Impact
+- New attack surface? input validation? sandbox constraints?
+- Crash-only vs error handling implications.
+- Changes to dependencies (CVE considerations, licenses).
+
+If relevant:
+- SBOM changes (add/remove deps).
+- Hardening flags or sanitizer coverage updates.
+
+---
+
+## 8) Test Plan (MUST be explicit)
+### 8.1 Tests to Add/Update
+- Unit tests: <list>
+- Integration tests: <list>
+- Concurrency tests (stress/soak): <list>
+- Fuzz tests (if applicable): <list>
+- Python tests (if applicable): <list>
+
+### 8.2 Verification Commands (Runnable)
+Provide exact commands (examples; adjust to project presets):
+- `cmake --preset dev && cmake --build --preset dev`
+- `ctest --preset dev`
+- `ctest --preset asan` / `ctest --preset tsan` / `ctest --preset ubsan`
+- Bench: `<bench command>`
+
+### 8.3 Acceptance Criteria (MUST be measurable)
+- AC-1: <measurable>
+- AC-2: <measurable>
+- AC-3: <measurable>
+
+---
+
+## 9) Implementation Plan (Checklist-friendly)
+Break work into steps that can map into `implementation_checklist.yaml`.
+
+| Step | Description | Refs (IDs) | Artifacts | DoD |
+|---:|---|---|---|---|
+| 1 | <setup> | `[BUILD-..]` | files/targets | passes build |
+| 2 | <impl> | `[API-..] [MEM-..]` | code | tests pass |
+| 3 | <verify> | `[TEST-..]` | tests/bench | meets thresholds |
+| 4 | <docs/migrate> | `[VER-..]` | MIGRATION/CHANGELOG | updated |
+
+---
+
+## 10) Rollout & Risk Mitigation
+- Rollout strategy (feature flag? gradual enable?).
+- Backout plan (how to revert safely).
+- Risks (technical/product) and mitigations.
+
+---
+
+## 11) Required Updates (Gate Checklist)
+Mark each item as ✅ when done.
+
+- [ ] Update `/blueprint/blueprint_vX.Y.md` (and/or add new snapshot)
+- [ ] Update `/blueprint/decision_log.md` with any new [DEC-XX]
+- [ ] Update `/blueprint/implementation_checklist.yaml` (new tasks/refs)
+- [ ] Update `CHANGELOG.md`
+- [ ] Update `MIGRATION.md` (required for MAJOR)
+- [ ] Add/update tests per §8
+- [ ] Ensure **no** `[TEMP-DBG]` markers remain
+- [ ] All CI quality gates pass (format/lint/sanitizers/tests/bench thresholds)
+
+---
+
+## Notes
+- Keep CRs **small** when possible; large changes should be split into multiple CRs.
+- If the CR is rejected, record the reason (e.g., performance risk, scope creep) to avoid rework later.

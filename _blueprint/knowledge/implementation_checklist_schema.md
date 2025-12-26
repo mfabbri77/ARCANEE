@@ -1,266 +1,171 @@
-<!-- implementation_checklist_schema.md -->
+<!-- _blueprint/knowledge/implementation_checklist_schema.md -->
 
 # Implementation Checklist Schema (Normative)
+This document defines the canonical **YAML schema** for `implementation_checklist.yaml` produced at the end of every Blueprint.  
+It is designed to be **machine-parseable**, enforce referential integrity to Blueprint IDs, and drive AI coding agents deterministically.
 
-This file defines the **required YAML schema** for:
-- `/_blueprint/project/implementation_checklist.yaml` (baseline checklist)
-- `/_blueprint/vM.m/checklist_delta.yaml` (overlay delta checklist)
-
-The checklist is a **contractual execution plan**: every requirement (**REQ-xxxxx**) MUST be implementable via at least one checklist step, and every step MUST be traceable to requirements/decisions/tests/gates.
-
-This schema is **normative** and must be enforced by the composer/validator (COMP-01).
+> **Precedence:** Prompt hard rules → `blueprint_schema.md` → this document → project-specific constraints.
 
 ---
 
-## 1. File invariants
+## 1) File Location & Naming
+- File path: `/blueprint/implementation_checklist.yaml`
+- Top-level key MUST be exactly: `implementation_checklist`
 
-- Checklist files MUST be valid UTF-8 YAML.
-- Tabs are forbidden; use spaces.
-- Top-level MUST be a mapping with required keys described in §2.
-- IDs referenced MUST exist in the effective blueprint (Eff(V)) or be introduced in the same overlay.
-- The literal string `N/A` is forbidden.
+**Rule:** This file must be regenerated whenever the Blueprint changes in a meaningful way (typically via a CR).
 
 ---
 
-## 2. Top-level schema
-
-### 2.1 Required keys
+## 2) Required Structure (Canonical)
+The YAML must conform to this structure:
 
 ```yaml
-schema_version: "1.0"
-checklist_id: "CL-<name-or-version>"
-scope:
-  applies_to: "baseline|overlay"
-  version: "M.m.p|unspecified"
-metadata:
-  owner: "<role/team>"
-  last_updated: "YYYY-MM-DD"
-  profile: "PROFILE_GENERAL|PROFILE_AAA_HFT"
-  mode: "A|B|C|unknown"
-sections:
-  - id: "CLSEC-00001"
-    title: "<section title>"
-    intent: "<short description>"
-    items:
-      - id: "CL-00001"
-        title: "<step title>"
-        priority: "P0|P1|P2|P3"
-        status: "todo|in_progress|blocked|done"
-        rationale: "<why this step exists>"
-        trace:
-          requirements: ["REQ-00001"]
-          decisions: ["DEC-00001"]
-          tests: ["TST-00001"]
-          gates: ["BUILD-00001"]
-        instructions:
-          - type: "command"
-            shell: "bash|pwsh|cmd"
-            run: "<exact command>"
-          - type: "manual"
-            text: "<human instruction>"
-        artifacts:
-          produces:
-            - path: "/relative/path"
-              description: "<what is produced>"
-          modifies:
-            - path: "/relative/path"
-              description: "<what changes>"
-        acceptance:
-          - "<objective criteria>"
-        rollback:
-          - "<how to revert if needed>"
-        notes:
-          - "<optional notes>"
+implementation_checklist:
+  blueprint_version: "X.Y"
+  repo_name: "<repo>"
+  milestones:
+    - id: "MS-01"
+      name: "..."
+      steps:
+        - id: "TASK-01.01"
+          action: "..."
+          refs: ["REQ-..", "ARCH-..", "DEC-..", "MEM-..", "CONC-..", "API-..", "PY-..", "BUILD-..", "TEST-..", "VER-.."]
+          artifacts: ["path/or/target", "..."]
+          verify: ["command ...", "..."]
+          notes: "optional"
+  quality_gates:
+    - id: "GATE-01"
+      name: "..."
+      command: "..."
+      refs: ["BUILD-..", "TEST-..", "TEMP-DBG"]
+  release:
+    tagging: "v<MAJOR>.<MINOR>.<PATCH>"
+    required_files: ["CHANGELOG.md", "MIGRATION.md"]
+    required_gates: ["GATE-01", "GATE-02"]
+    build_artifacts:
+      - name: "..."
+        command: "..."
+        outputs: ["path", "..."]
 ```
 
-### 2.2 Type rules
+---
 
-- `schema_version`: string; MUST be `"1.0"` unless a DEC + validator update introduces new version.
-- `checklist_id`: string; SHOULD be stable across baseline; overlay may append version.
-- `scope.applies_to`: `"baseline"` for `implementation_checklist.yaml`, `"overlay"` for `checklist_delta.yaml`.
-- `scope.version`:
-  - baseline: `"unspecified"` or `"0.0.0"`
-  - overlay: MUST be the same version as `release.md` (M.m.p)
-- `metadata.profile`: MUST match Ch0 profile.
-- `metadata.mode`: SHOULD reflect Mode A/B/C once known.
-- `sections`: non-empty list.
+## 3) Field Definitions (Normative)
+### 3.1 `blueprint_version` (required)
+- String, format `MAJOR.MINOR` (e.g., `"1.0"`, `"2.1"`)
+- Must match `[META-01]` in the Blueprint snapshot.
+
+### 3.2 `repo_name` (required)
+- Short repository name (no spaces preferred).
+
+### 3.3 `milestones[]` (required, non-empty)
+Each milestone groups steps into a coherent deliverable.
+
+Fields:
+- `id` (required): `MS-XX` where XX is 2 digits (`01..99`)
+- `name` (required): human-friendly label
+- `steps` (required, non-empty): list of step items
+
+### 3.4 `steps[]` (required, non-empty)
+Fields:
+- `id` (required): `TASK-XX.YY` where XX=milestone number, YY=step number, both 2 digits  
+  Example: `TASK-02.03`
+- `action` (required): imperative instruction that yields concrete repo changes
+- `refs` (required, non-empty): list of Blueprint IDs or tags (see §4)
+- `artifacts` (required, non-empty): list of created/modified artifacts
+  - file paths (e.g., `CMakePresets.json`, `src/foo.cpp`)
+  - targets (e.g., `target:<proj>`, `target:<proj>_tests`)
+  - docs (e.g., `docs/ARCHITECTURE.md`)
+- `verify` (required, non-empty): runnable commands that validate the step
+- `notes` (optional): clarifications; should not contain new requirements
+
+**Rule:** Every step must be verifiable.
+
+### 3.5 `quality_gates[]` (required, non-empty)
+Fields:
+- `id` (required): `GATE-XX`
+- `name` (required)
+- `command` (required): enforceable command/target that fails on violation
+- `refs` (required): must include relevant Blueprint IDs; include `TEMP-DBG` for the debug gate
+
+**Rule:** Gates are blocking for merge/release unless explicitly declared “non-blocking” in the Blueprint (discouraged).
+
+### 3.6 `release` (required)
+Fields:
+- `tagging` (required): string pattern, typically `v<MAJOR>.<MINOR>.<PATCH>`
+- `required_files` (required):
+  - must include `CHANGELOG.md`
+  - must include `MIGRATION.md` when MAJOR releases are possible
+- `required_gates` (required): list of gate IDs that must pass for release
+- `build_artifacts` (optional): list of artifacts to produce (packages, wheels, SDK zip)
 
 ---
 
-## 3. Section schema
+## 4) `refs` Rules (Referential Integrity)
+### 4.1 Allowed refs
+Each entry in `refs` must be either:
+- a Blueprint ID (e.g., `REQ-04`, `API-02`, `CONC-01`) **without brackets** OR
+- the special marker `TEMP-DBG` OR
+- a CR id (e.g., `CR-0042`) if the step implements a CR item
 
-Each section entry MUST contain:
+**Rule:** Do not include the square brackets in YAML refs. Use `REQ-04`, not `[REQ-04]`.
 
-- `id`: string, MUST match `^CLSEC-\d{5}$`
-- `title`: non-empty string
-- `intent`: non-empty string
-- `items`: non-empty list of checklist items
+### 4.2 Existence requirement
+Every referenced ID must exist in the current Blueprint snapshot (or be an approved special tag).
 
-Sections SHOULD be ordered logically:
-1) Validation & setup
-2) Architecture decisions & contracts
-3) Core implementation
-4) Tests
-5) CI gates & tooling
-6) Docs & release
+If the Blueprint is updated, update refs accordingly.
 
 ---
 
-## 4. Item schema
+## 5) Verification Command Rules
+- Commands must be runnable in a clean checkout using documented prerequisites.
+- Prefer preset-based commands:
+  - `cmake --preset dev`
+  - `cmake --build --preset dev`
+  - `ctest --preset dev --output-on-failure`
+- For gates, prefer explicit targets:
+  - `cmake --build --preset dev --target check_no_temp_dbg`
+  - `cmake --build --preset dev --target format_check`
 
-### 4.1 Required fields
-
-Each item MUST include:
-
-- `id`: string matching `^CL-\d{5}$`
-- `title`: string
-- `priority`: `P0|P1|P2|P3`
-- `status`: `todo|in_progress|blocked|done`
-- `rationale`: string
-- `trace`: mapping (see §5)
-- `instructions`: non-empty list
-- `artifacts`: mapping (produces/modifies; may be empty lists)
-- `acceptance`: non-empty list
-- `rollback`: list (may be empty)
-- `notes`: list (may be empty)
-
-### 4.2 Instruction schema
-
-Each `instructions[]` entry MUST have:
-
-- `type`: `"command"` or `"manual"`
-
-If `type: command`, MUST include:
-- `shell`: `"bash"|"pwsh"|"cmd"`
-- `run`: exact command line, copy/paste runnable
-
-If `type: manual`, MUST include:
-- `text`: explicit human steps; SHOULD include filenames
-
-### 4.3 Artifact schema
-
-`artifacts` MUST contain:
-- `produces`: list (may be empty)
-- `modifies`: list (may be empty)
-
-Each artifact entry MUST include:
-- `path`: repo-root-relative path (start with `/`)
-- `description`: string
-
-### 4.4 Acceptance criteria
-
-`acceptance[]` entries MUST be objective and verifiable.
-At least one acceptance entry SHOULD reference a test or gate by ID via `trace`.
+**Rule:** Avoid vague verification like “run tests” without specifying commands.
 
 ---
 
-## 5. Traceability requirements (normative)
+## 6) Minimal Required Quality Gates (Recommended baseline)
+At minimum, include gates for:
+- No TEMP-DBG markers:
+  - `check_no_temp_dbg`
+- Formatting clean:
+  - `format_check`
+- Tests pass:
+  - `ctest --preset <preset>`
+- Sanitizers (at least ASan and UBSan on Linux):
+  - `ctest --preset asan`
+  - `ctest --preset ubsan`
 
-### 5.1 Minimum trace
-
-Each checklist item MUST reference at least one of:
-- a requirement (`REQ-xxxxx`), or
-- a decision (`DEC-xxxxx`), or
-- a build/test gate (`BUILD-xxxxx`/`TST-xxxxx`).
-
-### 5.2 Global requirement coverage
-
-For the effective blueprint Eff(V):
-
-- Every `REQ-xxxxx` MUST appear in at least one checklist item’s `trace.requirements[]`.
-- Every `REQ-xxxxx` MUST have ≥1 test (`TST-xxxxx`) and ≥1 checklist step (enforced by validator).
-
-### 5.3 Decision enforcement coverage
-
-For every accepted decision:
-- The checklist SHOULD include at least one step ensuring enforcement exists (tests/gates implemented and run).
+Projects may add:
+- lint (clang-tidy)
+- benchmark regression checks
+- packaging/install consumer test
 
 ---
 
-## 6. Overlay delta checklist rules
+## 7) Evolution Across Versions
+When moving from v1.0 to v2.0:
+- Create a CR describing the change set.
+- Update Blueprint snapshot (`blueprint_v2.0.md`) and decision log as needed.
+- Regenerate checklist:
+  - new milestones/steps for new features
+  - new gates if the change introduces new risk areas
 
-`checklist_delta.yaml` MUST:
-- include only **new or modified** checklist steps, and/or
-- explicitly mark removals via a dedicated `removed_items` list (see below),
-- reference the overlay version.
-
-### 6.1 Removal schema (optional but recommended)
-
-```yaml
-removed_items:
-  - id: "CL-00042"
-    reason: "Superseded by CL-00110 due to new tooling"
-    replaced_by: "CL-00110"
-```
-
-Validator SHOULD ensure removed items exist in prior Eff(V).
+**Rule:** Checklist is always aligned to the current Blueprint snapshot and target release.
 
 ---
 
-## 7. Validator requirements (COMP-01 linkage)
-
-The composer/validator MUST validate:
-- YAML parse correctness
-- schema_version match
-- required keys and types
-- ID format correctness
-- uniqueness of all `CLSEC-*` and `CL-*` IDs within Eff(V)
-- referenced IDs exist (REQ/DEC/TST/BUILD)
-- global requirement coverage rule (§5.2)
-
----
-
-## 8. Widely recognized defaults (recommended content guidance)
-
-Baseline checklist SHOULD include early steps to:
-- run composer/validator locally,
-- configure/build/test via presets on each OS,
-- run formatting/lint tools,
-- run sanitizer jobs (where feasible),
-- execute unit/integration tests,
-- run benchmarks when performance budgets exist,
-- verify release.md invariants for overlays.
-
----
-
-## 9. Example minimal baseline checklist
-
-```yaml
-schema_version: "1.0"
-checklist_id: "CL-baseline"
-scope:
-  applies_to: "baseline"
-  version: "unspecified"
-metadata:
-  owner: "Architecture"
-  last_updated: "2025-01-01"
-  profile: "PROFILE_GENERAL"
-  mode: "unknown"
-sections:
-  - id: "CLSEC-00001"
-    title: "Validation and Setup"
-    intent: "Ensure local environment can run deterministic builds and validators."
-    items:
-      - id: "CL-00001"
-        title: "Run blueprint composer/validator"
-        priority: "P0"
-        status: "todo"
-        rationale: "Guarantees blueprint schema and enforcement rules are satisfied."
-        trace:
-          requirements: []
-          decisions: []
-          tests: []
-          gates: ["BUILD-00001"]
-        instructions:
-          - type: "command"
-            shell: "bash"
-            run: "python3 tools/blueprint/compose_validate.py --current"
-        artifacts:
-          produces: []
-          modifies: []
-        acceptance:
-          - "Validator exits with status 0 and reports Eff(vCURRENT) valid."
-        rollback: []
-        notes:
-          - "Use `--help` for options."
-```
+## 8) Compliance Checklist
+- [ ] Top-level key is `implementation_checklist`
+- [ ] All milestones, steps, and gates have correct IDs
+- [ ] `refs` contains only valid IDs (no brackets)
+- [ ] Every step has artifacts and verify commands
+- [ ] Gates are enforceable and used by CI
+- [ ] Release section includes required files and required gates

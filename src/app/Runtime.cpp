@@ -30,10 +30,10 @@ namespace arcanee::app {
 constexpr double kTickHz = 60.0;
 constexpr double kDtFixed = 1.0 / kTickHz;
 constexpr int kMaxUpdatesPerFrame = 4;
-constexpr double kMaxFrameTime = 0.25;
+constexpr double kMaxFrameTime = 0.25; // [REQ-30] Latency protection
 
 // ============================================================================
-// Implementation
+// Implementation [REQ-01] Core Baseline
 // ============================================================================
 
 Runtime::Runtime(const Config &config) : m_isHeadless(false) {
@@ -258,7 +258,7 @@ int Runtime::run() {
     return 1;
   }
 
-  LOG_INFO("Runtime: Starting main loop (Fixed Timestep: %.0f Hz)", kTickHz);
+  LOG_INFO("Runtime: Starting main loop (Fixed Timestep: %.0f Hz) [REQ-19]", kTickHz);
 
   double accumulator = 0.0;
   platform::Time::Stopwatch frameTimer;
@@ -368,7 +368,7 @@ u64 Runtime::getSimStateHash() const {
     if (snap.keys[SDL_SCANCODE_SPACE])
       hash ^= 0xCAFEBABE;
   }
-  return hash;
+  return hash; // [REQ-22] Determinism Hash
 }
 
 void Runtime::onDebugUpdate() {

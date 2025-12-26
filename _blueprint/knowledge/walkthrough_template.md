@@ -1,198 +1,197 @@
-<!-- walkthrough_template.md -->
+<!-- _blueprint/knowledge/walkthrough_template.md -->
 
-# Walkthrough Template (Normative)
+# walkthrough.md Template (Normative)
+This template defines the canonical structure for `/blueprint/walkthrough.md`, the execution plan that drives implementation.  
+It is designed to be used alongside `implementation_checklist.yaml` and must remain consistent with Blueprint IDs.
 
-This template defines the required structure for:
-- `/_blueprint/project/walkthrough.md`
-- `/_blueprint/vM.m/walkthrough_delta.md` (delta-specific, see §6)
-
-Walkthroughs are **execution guides** for implementers:
-- what to build,
-- where to start,
-- how to validate,
-- how to progress through the checklist deterministically.
-
-This template is **normative** unless overridden via DEC + enforcement.
+> **Precedence:** Prompt hard rules → `blueprint_schema.md` → this template → project-specific constraints.
 
 ---
 
-## 1. Baseline walkthrough (`walkthrough.md`) structure (MUST)
+## 1) Overview
+- **Blueprint Version:** vX.Y
+- **Target Release:** vA.B.C
+- **Repo Name:** <repo>
+- **Primary Goal:** one sentence
+- **Quality Gates:** list the mandatory gates (format, no TEMP-DBG, tests, sanitizers, etc.)
+- **How to Run (Quickstart):** commands using presets
 
-### 1.1 Title and purpose
-
-The file MUST begin with:
-- `#` title
-- a short purpose statement
-
-### 1.2 Table of contents (recommended)
-
-Include links to major sections for easy navigation.
-
-### 1.3 Required sections (MUST)
-
-The walkthrough MUST include these sections in order.
-
-#### 1) Overview
-- What the system is
-- High-level goals and constraints
-- Active profile (`PROFILE_GENERAL` or `PROFILE_AAA_HFT`)
-- Where the SoT blueprint lives (`/_blueprint/`)
-
-#### 2) Quickstart (Local)
-Provide exact commands to:
-- install prerequisites
-- configure/build/test using presets
-- run blueprint validator
-
-Commands MUST be copy/paste runnable and match Ch7.
-
-#### 3) Repo orientation
-- Map key directories to responsibilities:
-  - `/src`, `/include`, `/tests`, `/tools`, `/docs`, `/_blueprint`
-- Point to key blueprint chapters and how they relate.
-
-#### 4) Architecture in 10 minutes
-A condensed summary that links to:
-- Ch2 C4 overview
-- Ch3 components
-- Ch4 API/ABI
-- Ch6 concurrency
-- Ch5 hotpath (if perf-sensitive)
-
-#### 5) Contracts you must not break
-List the most important contracts with IDs:
-- key DEC decisions
-- key REQ requirements
-- key APIs
-- determinism/performance budgets if applicable
-
-#### 6) Implementation plan
-Explain how to execute `implementation_checklist.yaml`:
-- how items are grouped
-- what to do first
-- how to mark progress (status fields)
-- how to validate each milestone
-
-#### 7) Testing and CI
-- How to run unit/integration tests locally
-- How CI gates map to local commands
-- Sanitizers/analysis jobs and how to run them locally
-
-#### 8) Debugging and troubleshooting
-- Common failure modes (build issues, missing presets, validator errors)
-- How to interpret gate failures (include examples of messages)
-- TEMP debug policy reminder (link to temp_dbg_policy.md)
-
-#### 9) Release and versioning
-- Where release notes live (overlay `release.md`)
-- SemVer interpretation (link to Ch9)
-- How to prepare a release (gates, CRs)
-
-#### 10) Appendix
-- Tool versions
-- Links to important policies (dependency, logging, error handling, testing)
-- Glossary of key terms and IDs
+Example (replace with project commands):
+- `cmake --preset dev && cmake --build --preset dev`
+- `ctest --preset dev --output-on-failure`
+- `cmake --build --preset dev --target check_no_temp_dbg`
 
 ---
 
-## 2. Walkthrough content rules (MUST)
+## 2) Phases
+Each phase contains steps. Each step must include:
+- **Step ID** (e.g., `P1.S1`)
+- **Refs**: Blueprint IDs (e.g., `[BUILD-01]`, `[API-03]`)  
+- **Artifacts**: concrete files/targets created/modified
+- **Commands**: runnable commands for build/test/verify
+- **Definition of Done (DoD)**: objective pass/fail criteria
+- **Notes**: optional
 
-### 2.1 Command accuracy
-
-All commands MUST be:
-- deterministic,
-- consistent with Ch7 toolchain/presets,
-- OS-specific where needed (`bash` vs `pwsh`).
-
-### 2.2 Cross-platform guidance
-
-When commands differ by OS:
-- provide separate subsections for Linux/macOS vs Windows
-- avoid ambiguous instructions like “run the build”.
-
-### 2.3 ID references
-
-When referencing requirements/decisions/tests/gates:
-- include ID and short title
-- link to relevant blueprint sections when possible
-
-### 2.4 Avoid duplication of SoT
-
-The walkthrough MAY summarize, but MUST not become a second source of truth that contradicts chapters.  
-If there is a conflict, chapters win (SoT). Fix via CR/DEC.
+**Rule:** Steps must align with `implementation_checklist.yaml` tasks (milestones and tasks should be derivable from phases/steps).
 
 ---
 
-## 3. Suggested “Quickstart” commands (informative defaults)
+## 3) Phase 0 — Repo Bootstrap & Tooling
+### P0.S1 — Initialize repository structure
+- **Refs:** [ARCH-XX], [BUILD-01]
+- **Artifacts:** `/src`, `/include/<proj>`, `/tests`, `/tools`, `/blueprint`
+- **Commands:**
+  - `cmake --preset dev`
+  - `cmake --build --preset dev`
+- **DoD:**
+  - Configure/build succeeds on primary platform
+  - `compile_commands.json` generated (if required)
+- **Notes:** N/A
 
-Linux/macOS:
-
-```bash
-cmake --preset ci-linux
-cmake --build --preset ci-linux
-ctest --preset ci-linux --output-on-failure
-python3 tools/blueprint/compose_validate.py --current
-```
-
-Windows (PowerShell):
-
-```pwsh
-cmake --preset ci-windows
-cmake --build --preset ci-windows
-ctest --preset ci-windows --output-on-failure
-python tools/blueprint/compose_validate.py --current
-```
-
-(Exact preset names may vary; document via DEC if different.)
-
----
-
-## 4. Example “Contracts you must not break” section (informative)
-
-Include bullet list like:
-
-- REQ-00010 — Cross-platform build must pass on ubuntu/windows/macos
-- DEC-00005 — Public APIs do not throw exceptions (PROFILE_AAA_HFT)
-- API-00120 — `OrderRouter::submit(...)` is thread-safe and lock-free on hotpath
-- BUILD-00001 — blueprint validator must pass; no `N/A`, no `[TEMP-DBG]`
+### P0.S2 — Add quality gate targets
+- **Refs:** [TEMP-DBG], [BUILD-01]
+- **Artifacts:** `/tools/check_no_temp_dbg.*`, CMake target `check_no_temp_dbg`, `format_check`
+- **Commands:**
+  - `cmake --build --preset dev --target check_no_temp_dbg`
+  - `cmake --build --preset dev --target format_check`
+- **DoD:**
+  - Gates exist and fail appropriately when violated
 
 ---
 
-## 5. Baseline file checklist (recommended)
+## 4) Phase 1 — Core API Skeleton
+### P1.S1 — Define public API skeleton
+- **Refs:** [API-01], [API-02], [API-03]
+- **Artifacts:** `/include/<proj>/*.h(pp)`, export macros header
+- **Commands:**
+  - `cmake --build --preset dev`
+- **DoD:**
+  - Public headers compile
+  - No backend headers leaked into public API (unless intended)
 
-Walkthrough SHOULD link to:
-- `/_blueprint/project/decision_log.md`
-- `/_blueprint/project/implementation_checklist.yaml`
-- `/_blueprint/project/ch7_build_toolchain.md`
-- `/_blueprint/rules/*` key policies
-
----
-
-## 6. Delta walkthrough (`walkthrough_delta.md`) rules (MUST)
-
-For overlay delta walkthroughs:
-- The file MUST focus on:
-  - what changed in this version
-  - what implementers must do differently
-  - migration steps
-  - new/changed gates and tests
-
-### 6.1 Required sections for delta
-
-1) Delta summary (what changed)
-2) Impact matrix (components/APIs/build/test)
-3) Migration steps (ordered)
-4) New/changed gates (how to pass)
-5) Deprecated behaviors/APIs
-6) Rollback plan (if applicable)
-7) Links to CRs and decision deltas
-
-Delta walkthrough MUST NOT restate unchanged baseline content; link to baseline instead.
+### P1.S2 — Implement error handling baseline
+- **Refs:** [API-03], [REQ-XX], [TEST-XX]
+- **Artifacts:** `src/<proj>/error.*`, tests for error mapping
+- **Commands:**
+  - `ctest --preset dev --output-on-failure`
+- **DoD:**
+  - Error behavior matches policy; tests added and passing
 
 ---
 
-## 7. Policy changes
+## 5) Phase 2 — Core Implementation (Hot Path)
+### P2.S1 — Implement memory/allocator strategy
+- **Refs:** [MEM-01], [MEM-02]
+- **Artifacts:** allocator code + tests
+- **Commands:**
+  - `ctest --preset asan --output-on-failure`
+- **DoD:**
+  - No leaks; allocator correctness tests pass
 
-Changes to this template MUST be introduced via CR and MUST include:
-- migration notes for existing walkthroughs,
-- validator updates if any required headings change.
+### P2.S2 — Implement concurrency primitives (if applicable)
+- **Refs:** [CONC-01], [CONC-02], [TEST-XX]
+- **Artifacts:** thread pool/task system code + stress tests
+- **Commands:**
+  - `ctest --preset tsan --output-on-failure` (where supported)
+- **DoD:**
+  - Stress tests pass; no data races under TSan (where supported)
+
+---
+
+## 6) Phase 3 — Backends (Vulkan/Metal/DX12) (If applicable)
+Repeat a consistent step pattern per backend.
+
+### P3.VK.S1 — Vulkan backend init + capability capture
+- **Refs:** [ARCH-XX], [REQ-XX], [TEST-XX]
+- **Artifacts:** `src/backends/vulkan/*`, smoke test
+- **Commands:**
+  - `ctest --preset dev --output-on-failure`
+- **DoD:**
+  - Instance/device creation passes; capabilities logged
+
+### P3.MTL.S1 — Metal backend init + offscreen smoke
+- **Refs:** [ARCH-XX], [TEST-XX]
+- **Artifacts:** `.mm` files under metal backend, offscreen test
+- **Commands:**
+  - `ctest --preset dev --output-on-failure`
+- **DoD:**
+  - Offscreen render smoke passes; no Obj-C leaks into core
+
+### P3.DX12.S1 — DX12 backend init + debug layer (dev)
+- **Refs:** [ARCH-XX], [TEST-XX]
+- **Artifacts:** dx12 backend code, init tests
+- **Commands:**
+  - `ctest --preset dev --output-on-failure`
+- **DoD:**
+  - Device creation passes; errors mapped properly
+
+---
+
+## 7) Phase 4 — Python Bindings (If requested)
+### P4.S1 — Bindings skeleton + packaging
+- **Refs:** [PY-01], [PY-02], [PY-03]
+- **Artifacts:** `src/python/*`, `python/` package files
+- **Commands:**
+  - `python -m pytest -q` (or via CTest label)
+- **DoD:**
+  - Import works; minimal API callable; wheels strategy documented
+
+### P4.S2 — Zero-copy and ownership tests
+- **Refs:** [PY-03], [TEST-XX]
+- **Artifacts:** pytest tests for buffer protocol/lifetime
+- **Commands:**
+  - `python -m pytest -q`
+- **DoD:**
+  - Zero-copy is verified and safe; no crashes on GC
+
+---
+
+## 8) Phase 5 — Hardening, Sanitizers, and CI
+### P5.S1 — Sanitizer clean on primary platform
+- **Refs:** [BUILD-04], [TEST-XX]
+- **Artifacts:** sanitizer presets, CI config
+- **Commands:**
+  - `ctest --preset asan --output-on-failure`
+  - `ctest --preset ubsan --output-on-failure`
+- **DoD:**
+  - Sanitizers pass; failures are actionable
+
+### P5.S2 — CI pipeline operational
+- **Refs:** [BUILD-XX], [TEST-XX]
+- **Artifacts:** CI config files
+- **Commands:**
+  - CI run passes on declared matrix
+- **DoD:**
+  - All quality gates are blocking
+
+---
+
+## 9) Phase 6 — Release Readiness
+### P6.S1 — Documentation and versioning artifacts
+- **Refs:** [VER-01], [VER-04], [VER-05]
+- **Artifacts:** `CHANGELOG.md`, `MIGRATION.md` (if required), blueprint snapshot for release
+- **Commands:**
+  - `cmake --build --preset release`
+  - `ctest --preset release --output-on-failure` (if defined)
+- **DoD:**
+  - Release notes complete; SemVer rules satisfied
+
+### P6.S2 — Hygiene sweep
+- **Refs:** [TEMP-DBG]
+- **Artifacts:** none (cleanup)
+- **Commands:**
+  - `cmake --build --preset dev --target check_no_temp_dbg`
+- **DoD:**
+  - Zero TEMP-DBG markers; all gates pass
+
+---
+
+## 10) Mapping to Implementation Checklist
+- Ensure each walkthrough step maps to a `TASK-XX.YY` entry in `implementation_checklist.yaml`.
+- If a walkthrough step has no matching task, add it to the checklist (or justify its omission).
+
+---
+
+## 11) Notes
+- Keep the walkthrough concise and action-oriented.
+- Update this file as part of CRs that change scope or execution steps.

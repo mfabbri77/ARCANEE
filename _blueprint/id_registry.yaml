@@ -1,0 +1,73 @@
+# ID Registry
+# Source of Truth for ID allocation.
+# Increment `next_id` immediately upon allocation.
+# Do NOT reuse IDs.
+
+registry:
+  # Official Prefixes
+  META:
+    current: 20
+    next: 21
+    description: "Metadata and mode detection predicates"
+  SCOPE:
+    current: 20
+    next: 21
+    description: "Product identity, scope tags, top-level layout"
+  REQ:
+    current: 100
+    next: 101
+    description: "Requirements (functional/non-functional)"
+  DEC:
+    current: 100
+    next: 101
+    description: "Decisions (architecture, policy, assumptions)"
+  API:
+    current: 50
+    next: 51
+    description: "Public interfaces and contracts"
+  CONC:
+    current: 20
+    next: 21
+    description: "Concepts and terms"
+  DATA:
+    current: 10
+    next: 11
+    description: "Data models and schemas"
+  BUILD:
+    current: 30
+    next: 31
+    description: "Build system, toolchain, dependency management"
+  OBS:
+    current: 10
+    next: 11
+    description: "Observability quotas and specs"
+  TEST:
+    current: 60
+    next: 61
+    description: "Test cases and verification steps"
+  GATE:
+    current: 10
+    next: 11
+    description: "CI gates and checks"
+  VER:
+    current: 30
+    next: 31
+    description: "Verification results and evidence"
+  CR:
+    current: 100
+    next: 101
+    description: "Change Requests"
+  Q:
+    current: 10
+    next: 11
+    description: "Questions (intake/gap analysis)"
+
+  # Active Legacy Prefixes (found in scan, preserved for safety)
+  ARCH:
+    current: 40
+    next: 41
+    description: "Architecture components (legacy)"
+  MEM:
+    current: 20
+    next: 21
+    description: "Memory/resource budgets (legacy)"

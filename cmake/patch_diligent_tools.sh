@@ -23,6 +23,8 @@ sed -i 's/add_subdirectory(RenderStateNotation)/#&/' CMakeLists.txt
 sed -i 's/add_subdirectory(NativeApp)/#&/' CMakeLists.txt
 sed -i 's/add_subdirectory(HLSL2GLSLConverter)/#&/' CMakeLists.txt
 sed -i 's/add_subdirectory(RenderStatePackager)/#&/' CMakeLists.txt
+#sed -i 's/add_subdirectory(BuildTools)/#&/' CMakeLists.txt # Does not exist
+sed -i 's/add_format_validation_target/#&/' CMakeLists.txt
 
 # Replace XCBKeySyms target with actual system library (since NativeApp is disabled)
 sed -i 's/target_link_libraries(Diligent-Imgui PRIVATE XCBKeySyms)/target_link_libraries(Diligent-Imgui PRIVATE xcb-keysyms xcb)/' Imgui/CMakeLists.txt

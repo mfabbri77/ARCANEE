@@ -10,8 +10,11 @@ def main():
     else:
         root = os.getcwd()
     
-    blueprint_dir = os.path.join(root, 'blueprint')
-    files = glob.glob(os.path.join(blueprint_dir, '*.md'))
+    blueprint_dir = os.path.join(root, '_blueprint')
+    # Scan project/ and existing v* directories
+    files = glob.glob(os.path.join(blueprint_dir, 'project', '*.md')) + \
+            glob.glob(os.path.join(blueprint_dir, 'v*', '*.md')) + \
+            glob.glob(os.path.join(blueprint_dir, '*.md'))
     
     errors = 0
     

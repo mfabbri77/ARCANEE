@@ -1,4 +1,4 @@
-<!-- knowledge_index.md -->
+<!-- _blueprint/knowledge/knowledge_index.md -->
 
 # Knowledge Files Index (DET CDD ARCH AGENT)
 

@@ -20,7 +20,7 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "ARCANEE_ENABLE_WORKBENCH": "ON"
+        "ARCANEE_ENABLE_IDE": "ON"
       }
     },
     {
@@ -30,7 +30,7 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "ARCANEE_ENABLE_WORKBENCH": "ON"
+        "ARCANEE_ENABLE_IDE": "ON"
       }
     },
     {

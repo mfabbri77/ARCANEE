@@ -1,0 +1,29 @@
+# CI Gates Registry
+# Defines the gates that must pass for a PR/Merge.
+
+gates:
+  - id: GATE-0001
+    description: "No temporary markers allowed in blueprint"
+    cmd: "grep -r \"\\[TEMP\\]\" _blueprint"
+    fail_if_found: true
+    owning_chapter: "ch7"
+    
+  - id: GATE-0002
+    description: "Markdown headers must be present and valid"
+    cmd: "python3 _blueprint/tools/check_headers.py"
+    owning_chapter: "ch7"
+
+  - id: GATE-0003
+    description: "Compose and Validate Blueprint"
+    cmd: "python3 _blueprint/tools/compose_validate.py"
+    owning_chapter: "ch7"
+
+  - id: GATE-0004
+    description: "Requirement Traceability"
+    cmd: "python3 _blueprint/tools/compose_validate.py --trace"
+    owning_chapter: "ch1"
+
+  - id: GATE-0005
+    description: "Answers Consistency"
+    cmd: "python3 _blueprint/tools/check_answers.py"
+    owning_chapter: "ch0"

@@ -1,4 +1,4 @@
-<!-- knowledge_manifest.md -->
+<!-- _blueprint/knowledge/knowledge_manifest.md -->
 
 # Knowledge Manifest (SHA256)
 

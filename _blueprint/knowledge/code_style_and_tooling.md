@@ -1,205 +1,179 @@
-<!-- code_style_and_tooling.md -->
+<!-- _blueprint/knowledge/code_style_and_tooling.md -->
 
-# Code Style and Tooling (Normative)
+# Code Style & Tooling Policy (clang-format / clang-tidy) — Normative
+This document standardizes code style, formatting, and static analysis for native C++ repositories to keep output consistent across AI agents and over the software lifecycle.
 
-This document defines the **code style**, formatting, linting, static analysis, and developer tooling expectations for repositories governed by the DET CDD blueprint system.
-
-It is **normative** unless overridden via DEC + enforcement.
-
----
-
-## 1. Goals
-
-- Consistent, readable codebase across platforms.
-- Enforced style via automation (CI gates).
-- Minimize subjective style debates.
-- Promote correctness (lint, sanitizers, analysis).
-- Keep tooling deterministic and reproducible.
+> **Precedence:** Prompt hard rules → `blueprint_schema.md` → this document → project-specific constraints.
 
 ---
 
-## 2. Core rules (MUST)
-
-### 2.1 Formatting is automated
-
-- The repo MUST provide a formatting configuration (default: `.clang-format`).
-- CI MUST enforce formatting:
-  - either a format-check job (`clang-format --dry-run` equivalent),
-  - or a gate integrated into the validator.
-
-Manual formatting rules are non-authoritative; automation is authoritative.
-
-### 2.2 Lint/static analysis is automated
-
-- The repo MUST provide lint configuration (default: `.clang-tidy`).
-- CI MUST run lint on at least one OS (Linux recommended).
-
-Windows analysis:
-- run MSVC `/analyze` or equivalent as per `ci_reference.md`.
-
-### 2.3 Determinism and hotpath constraints
-
-In performance/determinism profiles:
-- avoid hidden allocations on hotpath (DEC if allowed)
-- avoid logging on hotpath unless explicitly bounded
-- enforce via benchmarks and targeted lint rules where feasible
+## 1) Goals
+- Keep code consistent and reviewable (minimal style drift).
+- Catch common correctness issues early (lint + sanitizers).
+- Reduce include/ABI surprises (header hygiene).
+- Make tooling runnable locally and in CI.
 
 ---
 
-## 3. Widely recognized defaults (recommended baseline)
+## 2) Canonical Tools (Mandatory)
+- **Formatting:** clang-format
+- **Static analysis:** clang-tidy (primary), optional cppcheck
+- **Build system:** CMake + presets (see `cmake_playbook.md`)
+- **Compiler database:** `compile_commands.json` must be enabled in dev/ci
 
-### 3.1 clang-format style defaults
+**Rule:** Tool versions should be pinned or documented (e.g., “clang-format 17+”).
 
-Default base:
-- `BasedOnStyle: LLVM`
-- 2-space indentation (or 4-space; choose one and enforce)
-- column limit: 100 (reasonable default)
-- pointer alignment: `Left` (common C++ style)
-- keep includes sorted
+---
 
-A project MAY choose Google style or another, but MUST document via DEC if deviating from baseline.
+## 3) clang-format Policy (Mandatory)
+### 3.1 Configuration
+- Provide a repo `.clang-format` at the root.
+- Choose a base style (LLVM or Google) and document it in the Blueprint ([Appendix A]).
+- Avoid frequent churn: do not reformat entire repo unless planned.
 
-### 3.2 clang-tidy checks (baseline)
+### 3.2 Formatting commands
+- Provide:
+  - `format` target (applies formatting)
+  - `format_check` target (fails if formatting changes would occur)
 
-Enable a pragmatic subset:
+### 3.3 Generated files
+- Do not format generated code unless it is checked in and intended for review.
+
+---
+
+## 4) clang-tidy Policy (Recommended, often mandatory in CI)
+### 4.1 Configuration
+- Provide `.clang-tidy` at repo root.
+- Use `clang-tidy` via a CMake target `lint` where possible.
+
+### 4.2 Baseline checks (recommended set)
+Start with a pragmatic baseline to avoid excessive noise:
 - `bugprone-*`
-- `clang-analyzer-*`
-- `modernize-*` (careful with ABI)
 - `performance-*`
 - `readability-*` (selectively)
-- `cppcoreguidelines-*` (selectively; avoid overly noisy checks)
+- `modernize-*` (selectively; avoid noisy rules)
+- `clang-analyzer-*`
 
-Avoid enabling extremely noisy rules without a plan; decisions must be enforceable.
+Avoid or carefully gate:
+- aggressive modernize rules that cause churn
+- rules that conflict with your ABI policy
 
-### 3.3 EditorConfig (recommended)
+**Rule:** If a check causes high false positives, disable it and document why in the Blueprint.
 
-Provide `.editorconfig` for whitespace consistency:
-- LF line endings (or consistent handling)
-- trailing whitespace trimming
-- final newline
-
----
-
-## 4. C++ style rules (normative guidance)
-
-### 4.1 Naming conventions (default)
-
-- Types: `PascalCase`
-- Functions: `camelCase` (or `snake_case` — pick one and enforce)
-- Variables: `snake_case`
-- Constants: `kPascalCase` or `SCREAMING_SNAKE_CASE` (pick one)
-- Macros: `SCREAMING_SNAKE_CASE`
-
-The project MUST pick a consistent convention and encode it in lint/config where feasible. If multiple conventions exist, record via DEC.
-
-### 4.2 Headers and includes
-
-- Public headers in `/include/<project>/...`.
-- Public headers MUST be self-contained (include what they use).
-- Prefer forward declarations where appropriate, but not at cost of correctness.
-- Includes SHOULD be ordered:
-  1) corresponding header
-  2) standard library
-  3) third-party
-  4) project headers
-
-### 4.3 Error handling consistency
-
-Code MUST follow the selected error model (see `error_handling_playbook.md`):
-- do not mix exceptions and status codes arbitrarily
-- map errors to stable error codes/messages
-
-### 4.4 Ownership and lifetimes
-
-Code MUST follow the API/lifetime policy (see `cpp_api_abi_rules.md`):
-- explicit ownership semantics
-- avoid raw owning pointers unless documented
-- avoid reference-to-temporary hazards
-
-### 4.5 Concurrency discipline
-
-When concurrency exists:
-- avoid data races (TSan gates)
-- prefer standard primitives (`std::mutex`, `std::atomic`, etc.) unless DEC approves custom lock-free structures.
+### 4.3 Warnings policy
+- CI may enforce “no new clang-tidy warnings” rather than “zero warnings immediately”.
+- Prefer incremental adoption:
+  - baseline existing warnings
+  - fail CI only on new warnings
 
 ---
 
-## 5. Tooling catalog (normative expectations)
+## 5) Naming Conventions (Mandatory baseline)
+Choose one style guide (LLVM or Google) and apply consistently. Recommended baseline:
+- Namespaces: `lower_snake_case` or `lowercase` (project choice)
+- Types (classes/structs/enums): `PascalCase`
+- Functions/methods: `camelCase` or `snake_case` (choose and codify)
+- Constants: `kConstantName` (Google) or `kConstant_name` (project-defined)
+- Files: `snake_case.cpp/.h` or `PascalCase.h` (choose and codify)
 
-### 5.1 Required tools
-
-- clang-format (or equivalent formatter)
-- clang-tidy (or equivalent linter)
-- CMake formatting optional (cmake-format) via DEC
-- Python 3 (if scripts are used, pinned requirements recommended)
-
-### 5.2 Optional tools
-
-- include-what-you-use
-- clangd configuration
-- codespell (docs)
-
-Optional tools MUST be encoded as CI jobs or documented local commands.
+**Rule:** The Blueprint must state the chosen convention; agents must follow it.
 
 ---
 
-## 6. CI gates (MUST)
+## 6) Header Hygiene (Mandatory)
+### 6.1 Public headers
+- Public headers must be self-contained and compile on their own.
+- Avoid including backend headers in public API (unless intended).
+- Avoid `using namespace` in headers.
 
-CI MUST fail on:
-- formatting violations
-- lint violations (or a defined allowlist with expiration via DEC)
-- new warnings when warnings-as-errors is enabled
-- missing tooling configs when required (e.g., .clang-format absent)
+### 6.2 Include order (recommended)
+- own header first
+- standard library
+- third-party
+- project headers
 
-If a project must temporarily suppress a lint rule:
-- record DEC or CR
-- add expiry mechanism (e.g., `TODO` tag plus a gate date) if feasible
-
----
-
-## 7. Version pinning and reproducibility (recommended)
-
-To reduce drift:
-- pin tool versions via:
-  - CI runner images, or
-  - toolchain scripts, or
-  - container images
-
-If using containers:
-- document in Ch7 and provide local commands.
+### 6.3 Forward declarations
+- Prefer forward declarations in headers to reduce compile times when safe.
+- Do not forward-declare standard library types incorrectly (use real includes where required).
 
 ---
 
-## 8. Minimal example configs (informative)
-
-### 8.1 Example `.clang-format`
-
-```yaml
-BasedOnStyle: LLVM
-IndentWidth: 2
-ColumnLimit: 100
-PointerAlignment: Left
-SortIncludes: true
-```
-
-### 8.2 Example `.clang-tidy` snippet
-
-```yaml
-Checks: >
-  clang-analyzer-*,
-  bugprone-*,
-  performance-*,
-  modernize-*,
-  readability-*
-WarningsAsErrors: '*'
-```
-
-(Real configs should tune readability/cppcoreguidelines to avoid noise.)
+## 7) Include-What-You-Use (Optional but valuable)
+If adopting IWYU:
+- define IWYU mapping files if needed
+- integrate as a separate CI job
+- avoid churn by incremental cleanup
 
 ---
 
-## 9. Policy changes
+## 8) Warnings & “Clean Build” Policy
+- Use strong warnings; CI uses Werror as per `cmake_playbook.md`.
+- Warnings in third-party code should not break CI:
+  - avoid compiling deps with your Werror flags unless you control them
+  - isolate warnings flags to your targets
 
-Changes to this policy MUST be introduced via CR and MUST include:
-- updates to CI gates and validator behavior,
-- migration steps for existing repos.
+**Rule:** The project’s own code must build warning-free in CI.
+
+---
+
+## 9) C++ Language Rules (Recommended)
+### 9.1 Exceptions
+- Follow the Blueprint’s exception policy strictly ([API-03]).
+- Never throw across ABI boundaries.
+
+### 9.2 RTTI
+- Decide in Blueprint whether RTTI is allowed.
+- If disabled, enforce consistently.
+
+### 9.3 `noexcept`
+- Use `noexcept` when it is part of the API contract or improves optimization.
+- Do not mark functions `noexcept` if they can throw under policy.
+
+### 9.4 `[[nodiscard]]`
+- Use `[[nodiscard]]` on status/expected return types to prevent ignored errors.
+
+---
+
+## 10) Comments & Traceability (Mandatory)
+- Complex algorithms must include a comment referencing Blueprint IDs, e.g.:
+  - `// Implements [CONC-02]: synchronization rules ...`
+- Avoid verbose comments that restate obvious code; focus on invariants and contracts.
+
+---
+
+## 11) Tooling Targets (Mandatory)
+Repository should provide:
+- `format`
+- `format_check`
+- `lint` (recommended)
+- `check_no_temp_dbg` (mandatory per `temp_dbg_policy.md`)
+
+---
+
+## 12) CI Integration (Mandatory)
+CI must run:
+- `format_check`
+- `check_no_temp_dbg`
+- build + tests
+- sanitizers (at least on Linux)
+
+Recommended:
+- `lint` (blocking or “no new warnings” mode)
+
+---
+
+## 13) Anti-Patterns (Avoid)
+- Reformatting huge portions without cause.
+- Ignoring lint warnings by disabling broad check groups without rationale.
+- Adding style exceptions ad-hoc; codify any exception in this file and Blueprint.
+- Allowing public headers to include platform/backend headers unintentionally.
+
+---
+
+## 14) Quick Checklist
+- [ ] `.clang-format` exists and `format_check` is a CI gate
+- [ ] `.clang-tidy` exists and `lint` is available (CI policy defined)
+- [ ] Naming conventions chosen and documented
+- [ ] Public headers are self-contained and clean
+- [ ] Traceability comments reference Blueprint IDs for complex logic
+- [ ] Tool versions pinned/documented

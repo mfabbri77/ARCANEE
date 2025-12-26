@@ -1,244 +1,168 @@
-<!-- repo_layout_and_targets.md -->
+<!-- _blueprint/knowledge/repo_layout_and_targets.md -->
 
-# Repository Layout and Targets (Normative)
+# Repo Layout & Targets (Normative)
+This document standardizes repository layout and build target conventions for native C++ apps/libraries, including optional Python bindings and multi-backend graphics (Vulkan/Metal/DX12).
 
-This document defines the **canonical repository structure**, required build targets, and naming conventions for projects governed by the DET CDD blueprint system.
-
-It is **normative** unless a higher-precedence rule overrides it via **DEC + enforcement gates**.
-
----
-
-## 1. Goals
-
-- Ensure a predictable repo structure across platforms.
-- Ensure CI can build and test deterministically using standardized targets.
-- Provide a stable mapping between blueprint components and build artifacts.
+> **Precedence:** Prompt hard rules → `blueprint_schema.md` → this document → project-specific constraints.
 
 ---
 
-## 2. Canonical repository layout
-
-### 2.1 Top-level directories (required)
-
-The repository root MUST contain:
-
-- `/_blueprint/` — Source of Truth for architecture and release overlays
-- `/src/` — production source
-- `/include/` — public headers (or at minimum, headers used externally)
-- `/tests/` — tests (unit/integration/other)
-- `/docs/` — user-facing docs (not blueprint)
-- `/tools/` — scripts (validator, generators, CI helpers)
-- `/examples/` — sample apps or usage snippets
-- `/CMakeLists.txt` — root build entrypoint
-- `/CMakePresets.json` — required (see XPLAT rules)
-
-Allowed additional top-level directories (common):
-- `/third_party/` (if vendoring is allowed by dependency policy)
-- `/cmake/` (CMake modules)
-- `/.github/` (CI workflows) or equivalent CI configuration directory
-- `/.clang-format`, `/.clang-tidy`, `/.editorconfig`
-
-### 2.2 Blueprint directory structure (required)
-
-`/_blueprint/` MUST contain:
-
-- `/_blueprint/_knowledge/` — reference knowledge files (read-only at runtime)
-- `/_blueprint/rules/` — enforceable rule files used by validator/CI
-- `/_blueprint/project/` — baseline blueprint:
-  - `ch0_meta.md` … `ch9_versioning_lifecycle.md`
-  - `decision_log.md`
-  - `walkthrough.md`
-  - `implementation_checklist.yaml`
-- `/_blueprint/vM.m/` — one or more overlays:
-  - `release.md`
-  - `decision_delta_log.md`
-  - `walkthrough_delta.md`
-  - `checklist_delta.yaml`
-  - `CR-XXXX.md` files
-  - changed chapter files as needed
+## 1) Layout Goals
+- Make repos predictable for humans and AI agents.
+- Prevent accidental public API leaks.
+- Keep build/test/tooling targets consistent across projects.
+- Support multiple backends cleanly without spaghetti dependencies.
 
 ---
 
-## 3. Naming conventions (normative)
-
-### 3.1 C++ targets
-
-Target names MUST be lowercase with underscores, using these prefixes:
-
-- Libraries:
-  - `lib_<name>` (static or shared, specified explicitly by options)
-- Executables:
-  - `app_<name>` (production)
-  - `tool_<name>` (developer/CI tooling)
-  - `example_<name>` (examples)
-- Tests:
-  - `test_<name>` (test executables)
-
-### 3.2 CMake options
-
-CMake cache options MUST use:
-
-- `PROJECTNAME_<FEATURE>` (upper snake)
-- boolean values: `ON/OFF`
-
-Common required options (defaults defined in `cmake_playbook.md`):
-- `PROJECTNAME_BUILD_TESTS`
-- `PROJECTNAME_BUILD_EXAMPLES`
-- `PROJECTNAME_ENABLE_SANITIZERS`
-- `PROJECTNAME_ENABLE_LTO` (if supported)
-- `PROJECTNAME_ENABLE_WARNINGS_AS_ERRORS` (CI default ON)
-
-### 3.3 Include paths and header naming
-
-- Public headers MUST live under `/include/<project_or_namespace>/...`.
-- Public headers SHOULD be stable and minimal.
-- Private/internal headers SHOULD live under `/src/` or `/include/<project>/detail/` if they must be installed (discouraged; requires DEC).
-
----
-
-## 4. Required build outputs
-
-### 4.1 Core targets (required)
-
-Every conforming repo MUST provide at minimum:
-
-- `lib_core` — primary library containing core functionality **or** a project-specific core library (DEC if named otherwise)
-- `tool_blueprint_validator` — a target or script entrypoint enabling CI to validate blueprint compliance
-- `test_core` — at least one test target that runs unit tests
-
-If the project is application-only (no library), a DEC MUST document:
-- why no library exists,
-- what the “core artifact” is instead,
-- and equivalent targets to support testing and packaging.
-
-### 4.2 “All tests” aggregator target (required)
-
-Repo MUST provide at least one of:
-- CTest integration (`ctest`) via `enable_testing()` and `add_test()`
-- OR an explicit target `test_all` that runs all tests
-
-Preferred: CTest with `ctest --test-dir <build> --output-on-failure`.
-
-### 4.3 Format/lint targets (recommended)
-
-Provide targets or scripts (preferred as CMake custom targets) for:
-
-- `tool_format` — clang-format applied to repo
-- `tool_lint` — clang-tidy (or equivalent)
-- `tool_static_analysis` — optional aggregate (MSVC /analyze, scan-build, etc.)
-
-CI SHOULD run `tool_format --check` style equivalents.
-
----
-
-## 5. Required scripts and tools
-
-### 5.1 Blueprint composer/validator (COMP-01)
-
-Repo MUST include:
-
-- A script under `/tools/blueprint/` (recommended):
-  - `compose_validate.py` (or equivalent)
-- Or a compiled tool target:
-  - `tool_blueprint_validator`
-
-This tool MUST:
-- reconstruct Eff(vCURRENT) and validate schema and gates (per `blueprint_schema.md`)
-- provide deterministic exit codes and actionable error messages
-- support local invocation consistent with CI commands
-
-### 5.2 Standard tool directories
-
-Tools SHOULD be organized as:
-- `/tools/blueprint/` — composer/validator, ID scanners, schema checks
-- `/tools/ci/` — CI helpers (cache keys, env reports)
-- `/tools/dev/` — developer workflow scripts
-
----
-
-## 6. Test layout (normative)
-
-- Tests MUST live under `/tests/`.
-- Unit tests SHOULD mirror library/module structure:
-  - `/tests/<module>/test_<module>_*.cpp`
-- Integration tests MAY live under:
-  - `/tests/integration/`
-- Fuzz tests MAY live under:
-  - `/tests/fuzz/` (gated; may require extra CI runners)
-- Performance benchmarks SHOULD live under:
-  - `/tests/perf/` or `/benchmarks/` (DEC required if separate top-level dir)
-
----
-
-## 7. Packaging layout (normative default)
-
-Default packaging assumes:
-- installable headers under `/include/`
-- installable libraries under a standard install prefix
-- CMake package config files under `lib/cmake/<project>`
-
-If “internal-only packaging” is used:
-- it MUST be introduced via DEC + gate,
-- and must not leak as public distribution artifacts.
-
----
-
-## 8. Documentation layout
-
-- `/docs/` is for user/developer documentation (non-blueprint).
-- The blueprint (`/_blueprint/`) is architecture SoT and MUST NOT be duplicated in `/docs/`.
-
----
-
-## 9. Validator checks (recommended)
-
-Validator/CI SHOULD check:
-- required directories exist (or DEC exists explaining deviations)
-- required targets exist (or DEC exists for exceptions)
-- CMakePresets.json exists and contains required presets
-- `tool_blueprint_validator` or script is runnable
-- tests are discoverable by ctest or `test_all`
-- header/include layout follows policy
-
----
-
-## 10. Widely recognized defaults (recommended)
-
-- Prefer:
-  - `src/` for implementation `.cpp`
-  - `include/` for public headers
-  - `tests/` with GoogleTest or Catch2
-  - CMake + Ninja + presets
-  - GitHub Actions-like CI with ubuntu/windows/macos matrix
-
-Any deviation MUST be captured by DEC with enforcement (tests/gates).
-
----
-
-## 11. Minimal example tree (informative)
-
-```text
-/
-  CMakeLists.txt
-  CMakePresets.json
-  include/
-    myproj/
-      core.hpp
-  src/
-    core.cpp
-  tests/
-    core/
-      test_core.cpp
-  tools/
-    blueprint/
-      compose_validate.py
-  _blueprint/
-    _knowledge/
-    rules/
-    project/
-      ch0_meta.md
-      ...
-    v1.0/
-      release.md
-      ...
+## 2) Canonical Directory Layout
 ```
+/blueprint/                 # source-of-truth specs
+/cmake/                     # CMake modules/toolchains/helpers
+/include/<proj>/            # public headers ONLY
+/src/                       # private implementation
+/src/<proj>/                # recommended subdir for core implementation
+/src/backends/              # backend implementations (vulkan/metal/dx12)
+/tests/                     # tests (unit/integration/stress)
+/examples/                  # sample usage (optional)
+/tools/                     # scripts + small dev tools
+/docs/                      # changelog/migration/architecture docs
+/third_party/               # only if vendoring is necessary (discouraged)
+```
+
+**Rule:** Public headers must live exclusively in `/include/<proj>/`.
+
+---
+
+## 3) Modules & Target Topology (Recommended)
+### 3.1 Core vs adapters
+- `<proj>`: core library (public API + thin dispatch)
+- `<proj>_core`: optional internal target if you want to separate exported API from core code
+- `<proj>_platform`: small platform abstraction layer (fs, threading, time, etc.) if needed
+
+### 3.2 Backend targets (graphics)
+Prefer separate backend targets:
+- `<proj>_vk` (Vulkan backend)
+- `<proj>_mtl` (Metal backend)
+- `<proj>_dx12` (DX12 backend)
+
+Rules:
+- Backends depend on core, not vice versa (core must not include backend headers).
+- Backends should be selected via factory/registry in core behind an interface.
+
+### 3.3 Optional utility targets
+- `<proj>_cli`: command-line tool using the library (if useful)
+- `<proj>_tools`: internal dev tools (profiling, asset conversion, etc.)
+- `<proj>_py`: Python extension module target (if applicable)
+
+---
+
+## 4) Public vs Private Headers (Mandatory)
+### 4.1 Public headers
+- Only stable API types/functions.
+- No backend-specific headers in public surface unless explicitly intended.
+- No “accidental” exposure of internal dependencies.
+
+### 4.2 Private headers
+- Live under `/src/` (or `/src/<proj>/`) and are not installed.
+- May include backend details, platform glue, private data layouts.
+
+**Rule:** Public headers should compile independently (include what they use).
+
+---
+
+## 5) Include Path Rules (Mandatory)
+- `<proj>` target:
+  - `PUBLIC`: `/include`
+  - `PRIVATE`: `/src`
+- No global include directories (avoid `include_directories()`).
+- Use `target_include_directories()` with BUILD/INSTALL interface for libraries.
+
+---
+
+## 6) Install/Export Rules (Libraries)
+If the project is a library/SDK:
+- Install public headers to `include/<proj>/`
+- Install targets and export CMake package config
+- Do not install private headers or backend implementation details unless explicitly part of the public SDK.
+
+---
+
+## 7) Tests Layout & Targets
+Suggested structure:
+```
+/tests/
+  unit/
+  integration/
+  stress/
+  data/
+```
+
+Targets:
+- `<proj>_tests_unit`
+- `<proj>_tests_integration`
+- `<proj>_tests_stress` (optional)
+Or a single `<proj>_tests` with CTest labels.
+
+Rules:
+- Tests link to `<proj>` (public surface) and may link to backends only if they are integration tests.
+- Unit tests should prefer testing through public API or internal test hooks explicitly designed.
+
+---
+
+## 8) Examples & Tools
+- `/examples` should demonstrate minimal, idiomatic usage and be kept stable.
+- `/tools` should contain scripts and small binaries not shipped as part of the public library.
+- Any tool that is shippable should live as a proper target (`<proj>_cli`) and be documented.
+
+---
+
+## 9) Python Bindings Layout (If applicable)
+Recommended:
+```
+/python/
+  pyproject.toml (or setup.cfg)
+  /<proj>/
+    __init__.py
+/src/python/            # C++ binding code (nanobind/pybind11)
+```
+
+Targets:
+- `<proj>_py` (extension module)
+Rules:
+- Keep binding layer thin; no business logic in Python glue.
+- Ensure packaging and tests are part of CI.
+
+---
+
+## 10) Cross-Platform Backend Notes
+### 10.1 Vulkan
+- Prefer dynamic loader integration strategy documented in Blueprint.
+- Backend should compile on all platforms that support it (or be conditionally built).
+
+### 10.2 Metal
+- Keep Objective-C++ (.mm) files isolated under the Metal backend target.
+- Avoid leaking Objective-C++ into core.
+
+### 10.3 DX12
+- Keep Windows-specific includes and COM helpers inside DX12 backend target.
+- Avoid polluting core with Windows headers.
+
+---
+
+## 11) Mandatory Quality Gate Targets
+Repos must provide these build targets (names may be standardized in CMake playbook):
+- `check_no_temp_dbg`
+- `format` and `format_check`
+- `lint` (recommended)
+- tests via CTest presets (mandatory)
+
+---
+
+## 12) Compliance Checklist
+- [ ] Public headers only in `/include/<proj>/`
+- [ ] Core target does not depend on backend targets
+- [ ] Backend targets are separable and conditionally buildable
+- [ ] Tests organized and runnable via CTest labels or clear targets
+- [ ] Python bindings isolated and thin (if present)
+- [ ] Required quality gate targets exist

@@ -1,259 +1,183 @@
-<!-- cpp_api_abi_rules.md -->
+<!-- _blueprint/knowledge/cpp_api_abi_rules.md -->
 
-# C++ API / ABI Rules (Normative)
+# C++ API/ABI Rules (Normative)
+This document provides a **state-of-the-art** baseline for designing **public C++ APIs** and controlling **ABI stability** in native libraries.  
+Use these rules when generating Blueprints and when implementing code.
 
-This document defines the **public API design rules**, ABI stability constraints, and cross-platform interface conventions for C++17/20/23 systems governed by the DET CDD blueprint framework.
-
-It is **normative** unless superseded by higher-precedence rules via DEC + enforcement.
-
----
-
-## 1. Goals
-
-- Provide stable, predictable public APIs.
-- Avoid accidental ABI breaks across platforms/compilers/stdlibs.
-- Make ownership, lifetimes, threading, and error behavior explicit.
-- Support cross-platform compilation and packaging.
-- Enable deterministic evolution via SemVer and blueprint overlays.
+> **Precedence:** Prompt hard rules → `blueprint_schema.md` → this document → project-specific constraints.
 
 ---
 
-## 2. Definitions
+## 1) Goals & Definitions
+### 1.1 Goals
+- Provide a clean, maintainable public API surface.
+- Control ABI breakage risk (especially for third-party consumers).
+- Preserve performance and safety on the hot path.
+- Enable future evolution (deprecations, migrations, feature flags).
 
-- **Public API**: headers and symbols intended for external consumption.
-- **ABI**: binary interface: symbol names, calling conventions, type layouts, vtables, exception behavior.
-- **API break**: source-level breaking change.
-- **ABI break**: binary-level breaking change (may or may not be source-breaking).
-- **Header-only**: library delivered entirely as headers; ABI concerns are reduced but still exist for inline code changes and ODR.
-
----
-
-## 3. Public surface rules (MUST)
-
-### 3.1 Public headers are explicit and minimal
-
-- Public headers MUST live under `/include/<project>/...`.
-- Public headers MUST be documented in Ch4.
-- Anything not intended for public use MUST NOT be installed/exported.
-
-### 3.2 Ownership and lifetimes are explicit
-
-Every public API MUST specify:
-- who owns returned pointers/references,
-- lifetime constraints of references/views,
-- whether objects can be shared across threads,
-- destruction responsibility.
-
-Preferred patterns:
-- return values for ownership
-- `std::unique_ptr<T>` for owned heap objects (if ABI permits; see §6)
-- `std::shared_ptr<T>` only when shared ownership is required (document overhead)
-- non-owning views:
-  - `std::span`, `std::string_view` (only when lifetime is well-defined)
-
-### 3.3 Threading/synchronization contract
-
-Public APIs MUST declare:
-- thread-safety level:
-  - thread-safe
-  - thread-compatible
-  - not thread-safe
-- which methods may be called concurrently
-- reentrancy constraints
-- synchronization responsibilities (caller vs callee)
-
-### 3.4 Error model is explicit
-
-Public APIs MUST:
-- declare whether they throw or return errors,
-- declare error codes/categories (see error_handling_playbook.md),
-- avoid mixing models without DEC.
-
-### 3.5 Determinism and performance contracts
-
-If determinism/perf budgets exist:
-- public APIs MUST specify:
-  - time source behavior (if exposed)
-  - allocation behavior on hotpath
-  - logging behavior on hotpath
-  - complexity bounds (Big-O or explicit constraints)
+### 1.2 Definitions
+- **API compatibility:** source-level compatibility (client code still compiles with minor updates).
+- **ABI compatibility:** binary-level compatibility (old binaries link/run with new library).
+- **Public surface:** everything under `/include` plus any exported symbols.
 
 ---
 
-## 4. Symbol visibility and export macros (MUST)
+## 2) Choose an ABI Strategy (Mandatory decision)
+In the Blueprint, explicitly decide and record under **[DEC-XX]** + **[API-02]**:
+- **Strategy A: Best-effort ABI** (recommended default): API stable across minor; ABI may change; consumers recompile.
+- **Strategy B: Stable ABI**: ABI guaranteed across minor/patch (higher cost).
+- **Strategy C: C ABI boundary**: stable C ABI with C++ wrappers (strongest binary stability).
 
-### 4.1 Export macro policy
-
-If building shared libraries, the project MUST define export macros:
-
-- `MYPROJ_API` (or equivalent)
-- `MYPROJ_LOCAL` (optional)
-
-Rules:
-- On Windows:
-  - use `__declspec(dllexport)` when building the DLL
-  - use `__declspec(dllimport)` when consuming
-- On GCC/Clang:
-  - use `__attribute__((visibility("default")))` as needed
-
-Ch4 MUST define:
-- macro naming
-- where macros live (public header)
-- how to build static vs shared
-
-### 4.2 Namespace policy
-
-- Public APIs MUST use a stable namespace.
-- Avoid exposing internal namespaces like `detail` unless explicitly intended.
+**Rule:** If stable ABI is required, prefer **PIMPL** or **C ABI boundary**.
 
 ---
 
-## 5. ABI stability rules (conditional, but often MUST)
+## 3) Public Headers Design Rules
+### 3.1 Include hygiene
+- Public headers must include only what they need.
+- Avoid including heavy STL headers unless necessary; prefer forward declarations.
+- Provide a single top-level include (e.g., `<mylib/mylib.h>`) when appropriate.
 
-Projects MUST declare an ABI policy in Ch4:
-- “header-only”
-- “ABI-stable” (strong guarantees)
-- “ABI-best-effort” (common for internal libs)
-- “no ABI guarantees” (application-only)
+### 3.2 Namespace & naming
+- Use a single root namespace (e.g., `mylib`).
+- Avoid `using namespace` in headers.
+- Keep names stable; deprecate rather than rename casually.
 
-If any consumers rely on ABI stability, use “ABI-stable” or “ABI-best-effort” and enforce by gates.
-
-### 5.1 ABI-stable guidelines (recommended when stable ABI required)
-
-To reduce ABI breaks:
-- avoid exposing STL types across DLL boundaries on Windows unless you control toolchain/CRT
-- use PImpl for classes with stable ABI needs
-- avoid inline function bodies in public headers when ABI stability is required
-- avoid exposing templates as exported symbols (prefer type-erasure or C wrappers)
-
-### 5.2 ABI break classification
-
-The following changes are ABI-breaking:
-- changing struct/class layout (adding/reordering members)
-- changing virtual function order
-- changing exception specification that affects ABI (toolchain-dependent)
-- changing exported symbol names
-- changing calling convention
-- changing enum underlying values if used in ABI
-
-ABI breaks MUST be reflected in SemVer bump policy (usually MAJOR) unless explicitly internal-only.
+### 3.3 Minimize templates on the public surface
+- Templates increase compile times and can implicitly expose ABI details.
+- If templates are necessary, keep them header-only and stable; avoid exposing internal types.
 
 ---
 
-## 6. Types allowed in public API (defaults)
+## 4) ABI-Safe Type Guidelines (If ABI matters)
+### 4.1 Avoid exposing unstable layouts
+Do NOT expose (in stable-ABI mode):
+- non-POD structs with private members that may change
+- classes with non-final vtables that may evolve
+- `std::string`, `std::vector`, `std::function`, `std::optional` in ABI-stable boundaries (stdlib ABI varies)
+- `std::shared_ptr` / `std::unique_ptr` as parameters across a stable ABI boundary (ownership semantics + allocator mismatch)
 
-### 6.1 Safe-by-default types (recommended)
+Prefer in ABI-stable boundaries:
+- opaque handles (`struct MyHandle; using my_handle_t = MyHandle*;`)
+- PIMPL (`class Foo { struct Impl; std::unique_ptr<Impl> p_; };`)
+- C-friendly PODs with fixed-size fields and explicit versioning.
 
-- fixed-width integers: `std::uint32_t` etc.
-- plain enums with explicit underlying type
-- POD structs with explicit layout (careful with padding)
-- opaque handles (pointer-to-incomplete type)
-- `std::span` / `std::string_view` (when lifetime is stable and callers are C++20)
+### 4.2 Struct evolution rules (public POD)
+If you expose public structs:
+- Use `uint32_t size` or `uint32_t version` fields for extensibility.
+- Append new fields at the end only.
+- Document alignment/padding expectations if binary serialization is involved.
 
-### 6.2 Types requiring caution / DEC
-
-- `std::string`, `std::vector`, and other STL containers across shared library boundary (Windows especially)
-- `std::function` (allocation + ABI)
-- exceptions across boundaries
-- custom allocators exposed publicly
-
-If used, DEC MUST document:
-- toolchain coupling assumptions
-- ABI expectations per platform
-- tests/gates ensuring compatibility
-
-### 6.3 C ABI wrapper option (recommended when stable ABI required)
-
-For maximum ABI stability:
-- provide a C API wrapper:
-  - `extern "C"` functions
-  - opaque handles
-  - explicit ownership functions
-
-This approach should be decided via DEC if consumers require stable ABI across compilers.
+### 4.3 Enums
+- Prefer `enum class` with explicit underlying type.
+- Do not reorder enumerators; only append new ones.
+- Reserve ranges if you expect growth.
 
 ---
 
-## 7. Header content rules (normative defaults)
+## 5) Function Signatures (Public API)
+### 5.1 Parameters and ownership
+- For input views: `std::span<const T>`, `std::string_view`, or `{ptr, len}` in C ABI.
+- For output buffers: caller-allocated spans or two-call “size then fill” pattern for C ABI.
+- Avoid hidden allocations in hot-path calls; document if unavoidable.
 
-### 7.1 Declaration-only public headers (default)
+### 5.2 Exceptions policy
+- Blueprint must decide if exceptions are allowed.
+- If exposing a C ABI boundary: functions must be `noexcept` and return error codes/status.
 
-Public headers SHOULD be declaration-only:
-- templates/constexpr/inline trivial code is acceptable
-- substantial implementations in headers require DEC and justification
+### 5.3 Error types
+Recommended patterns:
+- C++: `expected<T, Error>` / `StatusOr<T>` style, or `Status` + out-param.
+- C ABI: `int` error codes + optional message getter.
 
-Rationale:
-- reduces rebuild costs
-- reduces ABI exposure
-- improves encapsulation
-
-### 7.2 Include guards
-
-Use either:
-- `#pragma once` (widely supported)
-- or traditional include guards
-
-Choose one and enforce.
-
-### 7.3 Exceptions and RTTI policy
-
-Ch4 MUST declare:
-- exceptions enabled/disabled
-- RTTI enabled/disabled
-- and how this differs per platform
-
-CI SHOULD verify flags are consistent across presets.
+**Rule:** Never throw exceptions across ABI boundaries.
 
 ---
 
-## 8. Versioning and deprecation (normative)
+## 6) Symbol Visibility & Export Macros (Mandatory)
+### 6.1 Visibility rules
+- Hide symbols by default; export only the public surface.
+- GCC/Clang: compile with `-fvisibility=hidden` (where appropriate).
+- Use an export macro for public types/functions.
 
-### 8.1 Deprecation mechanism
+### 6.2 Export macro pattern
+Provide a macro like:
+- `MYLIB_API` expands to `__declspec(dllexport)` / `__declspec(dllimport)` on Windows
+- and to `__attribute__((visibility("default")))` on ELF/Mach-O as needed
 
-- Use `[[deprecated("message")]]` for deprecations when possible.
-- Provide migration notes in release.md.
-- Deprecations SHOULD exist for at least one minor release before removal (unless security/critical fix).
-
-### 8.2 SemVer mapping
-
-Default mapping:
-- PATCH: bugfixes, no API/ABI breaks
-- MINOR: additive API changes, compatible behavior
-- MAJOR: API breaks or ABI breaks
-
-If ABI guarantees are “none”, SemVer may be more flexible, but must be documented in Ch9 via DEC.
+**Rule:** The Blueprint must specify this macro and how it is applied consistently.
 
 ---
 
-## 9. Testing and enforcement (MUST)
+## 7) Versioning in Headers (Mandatory)
+### 7.1 Version macros
+Define:
+- `MYLIB_VERSION_MAJOR`, `MYLIB_VERSION_MINOR`, `MYLIB_VERSION_PATCH`
+- optionally a single `MYLIB_VERSION_STRING`
 
-### 9.1 API contract tests
+### 7.2 Feature detection
+Provide compile-time feature macros, e.g.:
+- `MYLIB_HAS_FOO 1`
+- `MYLIB_HAS_BAR 0`
 
-Tests MUST verify:
-- ownership and lifetime invariants (where possible)
-- error model behavior (returned codes, no-throw policy)
-- thread-safety claims (stress tests or TSan where feasible)
-
-### 9.2 ABI checks (conditional)
-
-If ABI stability is promised:
-- CI MUST include an ABI compatibility check on at least one platform (Linux recommended) using tools such as:
-  - `abi-compliance-checker` / `abi-dumper` (if appropriate)
-- Windows ABI checks are harder; may use symbol diffing and strict toolchain pinning.
-
-Any ABI policy enforcement tool choice requires DEC if nontrivial.
+Avoid probing symbol presence indirectly when a macro can be used.
 
 ---
 
-## 10. Interactions with GPU APIs (conditional)
+## 8) Deprecation & Migration (Mandatory)
+### 8.1 Deprecation macro
+Provide:
+- `MYLIB_DEPRECATED(since, removal)` attribute wrapper
+- Optionally: `MYLIB_DEPRECATED_MSG("...")`
 
-If TOPIC=gpu, the public API must avoid leaking backend-specific handles unless explicitly intended.  
-See `GPU_APIs_rules.md` and `multibackend_graphics_abstraction_rules.md`.
+### 8.2 Deprecation lifecycle
+- Deprecate first; keep for at least N minor releases or until next major (per [VER-04]).
+- Provide replacements and MIGRATION notes.
+
+**Rule:** Renames and behavior changes must be announced in `CHANGELOG.md` and `MIGRATION.md` when required.
 
 ---
 
-## 11. Policy changes
+## 9) C API Boundary (If selected)
+### 9.1 Handle-based design
+- All objects are opaque handles.
+- Provide create/destroy functions.
+- Provide explicit allocator ownership rules.
 
-Changes to this policy MUST be introduced via CR and MUST include:
-- migration notes,
-- updated tests/gates.
+### 9.2 String and buffers
+- Use `{const char* ptr, size_t len}` views for inputs.
+- For outputs: caller provides buffer + len; function returns required size.
+
+### 9.3 Thread-safety
+- Explicitly document per-handle thread-safety and global initialization/shutdown requirements.
+
+---
+
+## 10) Backward Compatibility Testing (Recommended)
+If you claim stable ABI/API across versions, include tests:
+- Compile-time tests (API presence).
+- Link/run tests against older headers or stub binaries (where feasible).
+- Symbol checks (platform dependent).
+
+Blueprint should define [TEST-XX] for these.
+
+---
+
+## 11) Anti-Patterns (Avoid)
+- Exposing internal headers/types in `/include`.
+- Exporting everything (no visibility control).
+- Returning owning raw pointers without clear ownership contract.
+- Using exceptions for control flow in hot paths.
+- Using `std::cout`/`printf` for logging (use approved logger).
+- “Just add a field to a public struct” without versioning/compat plan.
+
+---
+
+## 12) Checklist (Quick)
+When finalizing a Blueprint:
+- [ ] [API-02] explicitly selects ABI strategy (best-effort / stable / C boundary)
+- [ ] Export macro and symbol visibility policy defined
+- [ ] Error handling and exception policy explicit
+- [ ] Public types are ABI-safe per chosen strategy
+- [ ] Deprecation + migration policy aligns with [VER-04]/[VER-05]
+- [ ] Compatibility tests defined if guarantees are claimed

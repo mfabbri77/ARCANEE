@@ -13,7 +13,7 @@ def check_no_temp_dbg():
     # Extensions to check
     extensions = ('.cpp', '.h', '.hpp', '.c', '.cmake', '.txt', '.md', '.py', '.sh')
     # Directories to exclude
-    exclude_dirs = {'.git', 'build', 'install', 'third_party', 'external', '.vscode', 'blueprint'}
+    exclude_dirs = {'.git', 'build', 'install', 'third_party', 'external', '.vscode', '_blueprint'}
     
     found_errors = False
 

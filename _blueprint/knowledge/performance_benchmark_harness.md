@@ -1,218 +1,173 @@
-<!-- performance_benchmark_harness.md -->
+<!-- _blueprint/knowledge/performance_benchmark_harness.md -->
 
 # Performance Benchmark Harness (Normative)
+This document standardizes how to create and run **performance benchmarks** for native C++ projects (and optional Python bindings) and how to enforce **regression gates** over time.
 
-This document defines the **benchmarking harness**, measurement rules, and performance regression enforcement for systems governed by the DET CDD blueprint framework.
-
-It is **normative** when:
-- performance budgets exist in Ch1/Ch5, or
-- profile is `PROFILE_AAA_HFT`, or
-- a DEC declares performance as a key constraint.
-
-Otherwise it is recommended guidance.
+> Use this when the Blueprint defines performance budgets ([REQ-01]) or regression policies ([VER-09]).  
+> **Precedence:** Prompt hard rules → `blueprint_schema.md` → this document → project-specific constraints.
 
 ---
 
-## 1. Goals
-
-- Provide repeatable, comparable performance measurements.
-- Detect regressions early via CI gates (where feasible).
-- Encode performance budgets as enforceable contracts.
-- Support hotpath optimization without sacrificing correctness.
-
----
-
-## 2. Definitions
-
-- **Benchmark**: a repeatable measurement of an operation’s time/throughput/allocations.
-- **Microbenchmark**: small focused benchmark (function-level).
-- **Macrobenchmark**: end-to-end scenario benchmark.
-- **Budget**: target thresholds for latency/throughput/memory/allocs.
-- **Regression**: statistically meaningful performance degradation vs baseline.
+## 1) Goals
+- Make performance measurable, repeatable, and comparable across versions.
+- Detect regressions early and tie them to budgets (latency/throughput/memory).
+- Avoid misleading benchmark results (noise, warmup issues, unstable environments).
+- Provide a clean path for CI gating and long-term baselines.
 
 ---
 
-## 3. Baseline harness requirements (MUST)
+## 2) Benchmark Types (Recommended)
+### 2.1 Microbenchmarks (primary)
+- Measure single operations or tight kernels (allocators, queue ops, math kernels, encoding).
+- Use stable inputs and fixed-size datasets.
 
-### 3.1 Harness location and build integration
+### 2.2 Scenario/Workload benchmarks (optional)
+- Measure realistic pipelines (frame simulation, asset upload, command buffer recording).
+- Often more representative but also noisier.
 
-Benchmarks MUST live under:
-- `/tests/perf/` or `/benchmarks/` (DEC required if separate directory)
-
-Benchmarks MUST:
-- be built via CMake,
-- produce at least one executable target, e.g. `bench_core`.
-
-### 3.2 Harness framework default
-
-Widely recognized default:
-- **Google Benchmark** (`benchmark` library) for microbenchmarks.
-
-Alternative frameworks are allowed via DEC.
-
-### 3.3 Deterministic inputs
-
-Benchmarks MUST:
-- use fixed input datasets or generated inputs with fixed seeds,
-- avoid nondeterministic IO unless explicitly measured and isolated.
-
-### 3.4 Warmup and iterations
-
-Benchmarks MUST include:
-- warmup iterations,
-- sufficient repetitions to reduce noise.
-
-Defaults (reasonable baseline):
-- warmup: 1–2 seconds or fixed warmup iterations
-- measurement: at least 10 iterations (or framework default) with stable seed
+### 2.3 End-to-end latency sampling (optional)
+- If you care about p50/p99/p999 latency, add a harness that records a latency distribution.
 
 ---
 
-## 4. Metrics to measure (normative)
+## 3) Framework Choice (Recommended default)
+- **Google Benchmark** for C++ microbenchmarks.
 
-At minimum, measure:
-- wall-clock time per operation (or per batch)
-- throughput (ops/sec) if applicable
-
-If hotpath includes memory constraints:
-- measure allocations (count/bytes) where feasible (custom allocator hooks or tooling)
-- measure peak RSS in macrobench (optional; noisy)
+**Rule:** The Blueprint must specify the benchmark framework and how to build/run it.
 
 ---
 
-## 5. Environment controls (recommended, sometimes required)
+## 4) Repository Structure & Targets
+Recommended:
+```
+/bench/
+  benchmarks/         # *.cpp google-benchmark sources
+  data/               # optional datasets
+```
 
-### 5.1 CI performance constraints
+Targets:
+- `<proj>_bench` (single binary) or multiple per module.
 
-CI machines are noisy; therefore:
-
-- CI SHOULD run **smoke benchmarks**:
-  - short duration, primarily to catch gross regressions
-- Hard gating in CI SHOULD be used only when:
-  - CI environment is stable enough, or
-  - regression thresholds are generous and measured robustly
-
-If CI cannot reliably gate performance:
-- a DEC MUST define an alternate enforcement:
-  - nightly performance runs
-  - dedicated perf runner
-  - trend reporting only + manual approval gate
-
-### 5.2 Recommended controls
-
-- pin CPU frequency governor if possible (dedicated runners)
-- pin process affinity (optional)
-- isolate background work (best-effort)
+**Rule:** Bench targets must be built via CMake presets and runnable without extra manual steps.
 
 ---
 
-## 6. Regression policy (normative when budgets exist)
+## 5) Measurement Discipline (Mandatory rules)
+### 5.1 Warmup
+- Always include warmup iterations/time to reduce cold-start noise (caches, JIT-like effects, drivers).
+- For GPU-related benches, ensure first-run initialization is excluded or explicitly measured separately.
 
-### 6.1 Threshold definition
+### 5.2 Stable inputs
+- Avoid random inputs unless seeded and controlled.
+- Prefer fixed datasets; document size and distribution.
 
-Ch1/Ch5 MUST define:
-- target metrics (p50/p95 latency, throughput, allocations)
-- acceptable regression thresholds per metric
-- what constitutes “budget violation”
+### 5.3 Avoid I/O in measurement
+- No disk/network I/O inside measured loops.
+- Pre-load data outside timed region.
 
-Default rational thresholds (if none provided, choose via DEC):
-- microbench: fail if >10% regression on median time
-- macrobench: warn at 10%, fail at 20%
-- allocations: fail if allocations increase on hotpath unless DEC
-
-### 6.2 Baseline selection
-
-Regression checks MUST compare against:
-- last release baseline (preferred), or
-- pinned baseline commit, or
-- stored CI artifact baseline
-
-Baselines MUST be explicit and immutable.
+### 5.4 CPU affinity and turbo (recommended)
+- If possible for dedicated benchmarking machines:
+  - pin CPU affinity
+  - disable CPU frequency scaling / turbo for stable results
+- In CI, assume noisy environment and use conservative gates.
 
 ---
 
-## 7. Benchmark output format (normative)
+## 6) What to Measure (Recommended metrics)
+Depending on project needs, record:
+- **Throughput** (ops/s, MB/s, frames/s)
+- **Latency** (ns/op) for microbench
+- **Distribution** (p50/p99/p999) for scenario benches
+- **Memory** (peak allocations, bytes allocated/op) where feasible
+- **GPU timing** (optional) using timestamp queries, if relevant and stable
 
-Benchmarks MUST be able to emit machine-readable output:
-- JSON preferred (Google Benchmark supports `--benchmark_format=json`)
-
-CI SHOULD archive:
-- benchmark JSON outputs
-- environment summary (compiler version, CPU, OS)
-
----
-
-## 8. Benchmark categories and required coverage
-
-If performance is a key constraint, ensure benchmarks exist for:
-- hotpath critical operations (submit/route/match equivalent)
-- serialization/deserialization (if applicable)
-- concurrency queues/backpressure operations (if applicable)
-- memory allocation hotspots (if applicable)
+**Rule:** Every benchmark must declare what metric matters and what budget it maps to ([REQ-01]).
 
 ---
 
-## 9. CI integration (normative guidance)
+## 7) Output Format & Baselines
+### 7.1 JSON output
+Google Benchmark supports JSON output. Standardize:
+- `--benchmark_format=json`
+- store results as artifacts in CI for comparison.
 
-### 9.1 Required jobs (conditional)
+### 7.2 Baselines storage
+Recommended baseline approach:
+- commit a baseline JSON under `/bench/baselines/vX.Y.json` for major releases
+- or store baselines in CI artifacts / a dedicated performance dashboard
 
-If budgets exist, CI MUST include at least:
-- `bench-smoke` job (Linux recommended)
-
-### 9.2 Example commands
-
-- Configure/build via presets:
-  - `cmake --preset ci-linux`
-  - `cmake --build --preset ci-linux --target bench_core`
-- Run:
-  - `./build/ci-linux/bench_core --benchmark_format=json --benchmark_out=bench.json`
-
-(Exact paths depend on presets; Ch7 must document.)
-
-### 9.3 Regression gate implementation
-
-A regression gate script SHOULD:
-- parse benchmark JSON,
-- compare to baseline JSON,
-- compute percent change,
-- fail if thresholds exceeded,
-- print the top regressions.
+**Rule:** Baselines must be versioned and tied to releases (SemVer).
 
 ---
 
-## 10. Determinism and floating-point considerations (AAA/HFT)
+## 8) Regression Policy (Mandatory if perf budgets exist)
+Blueprint should define [VER-09] including:
+- which benchmarks are gating
+- regression thresholds
+- how noise is handled
 
-If determinism profile:
-- benchmark harness MUST:
-  - fix seeds and time sources
-  - document FP flags (fast-math vs strict)
-  - avoid logging overhead on hotpath
+Recommended threshold patterns:
+- **Hard fail** if regression > X% on a stable runner
+- **Warn-only** on PR CI (noisy) and enforce on nightly/stable perf runners
+- Use different thresholds per benchmark category
 
-If FP controls are required:
-- add gates ensuring consistent compiler flags per platform.
+Example policy:
+- Microbench: fail if > 10% regression
+- Scenario: fail if > 15% regression
+- Memory: fail if > 10% increase in peak allocations
 
----
-
-## 11. Testing and validation of benchmarks
-
-Benchmarks SHOULD include:
-- correctness assertions where feasible (e.g., output invariants)
-- guards against compiler optimizing away work (use `DoNotOptimize`, etc.)
-
----
-
-## 12. Enforcement summary
-
-When performance budgets exist, CI/validator MUST ensure:
-- benchmarks build successfully
-- smoke run executes (non-zero output)
-- regression checks run via defined policy (hard gate or alternate per DEC)
-- benchmark outputs are archived or printed
+**Rule:** Thresholds must be explicit and documented in the Blueprint.
 
 ---
 
-## 13. Policy changes
+## 9) CI Integration (Recommended)
+### 9.1 Two-tier model (recommended)
+- **PR CI:** run a small subset, record results, optionally warn on large regressions
+- **Nightly/Perf CI:** run full suite on dedicated runner and enforce strict thresholds
 
-Changes to this harness MUST be introduced via CR and MUST include:
-- updated scripts/gates for regression checks,
-- migration notes for benchmark naming/output.
+### 9.2 Commands (examples)
+- Build: `cmake --preset release && cmake --build --preset release --target <proj>_bench`
+- Run: `./build/release/<proj>_bench --benchmark_format=json --benchmark_out=bench.json`
+
+**Rule:** Keep benchmark execution separate from unit tests; do not slow down PR CI unnecessarily.
+
+---
+
+## 10) GPU Benchmarks (If applicable)
+GPU timing is tricky; if you add it:
+- use timestamp queries or platform timing tools
+- separate “submission cost” (CPU) from “GPU execution time”
+- warm up pipelines and resources before timing
+- avoid measuring swapchain/present timing unless explicitly needed
+
+**Rule:** GPU benches must document what exactly they measure (CPU submission vs GPU time).
+
+---
+
+## 11) Python Benchmarks (If Python bindings exist)
+- Prefer `pytest-benchmark` or a small dedicated harness.
+- Measure:
+  - overhead of binding calls
+  - zero-copy view creation cost
+  - batch operation performance
+
+**Rule:** Python benchmarks must avoid per-element Python loops where possible; measure meaningful, vectorized usage.
+
+---
+
+## 12) Anti-Patterns (Avoid)
+- Comparing results across different machines without noting hardware differences.
+- Running heavy background tasks during measurement.
+- Measuring one-off first-run initialization as “steady state” accidentally.
+- Treating noisy CI results as definitive without controlling environment.
+- Gating on extremely tight thresholds without stable runners.
+
+---
+
+## 13) Quick Checklist
+- [ ] Bench target exists and builds via presets
+- [ ] Warmup is handled
+- [ ] Outputs JSON and stores artifacts/baselines
+- [ ] Regression thresholds are defined ([VER-09]) and enforceable
+- [ ] CI has a plan (PR subset + nightly/stable runner recommended)
+- [ ] GPU and Python benchmarks are explicit and scoped (if applicable)

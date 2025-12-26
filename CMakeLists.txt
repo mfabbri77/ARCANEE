@@ -57,6 +57,7 @@ FetchContent_MakeAvailable(squirrel)
 set(DILIGENT_BUILD_SAMPLES OFF CACHE BOOL "Disable Diligent Samples" FORCE)
 set(DILIGENT_BUILD_TESTS OFF CACHE BOOL "Disable Diligent Tests" FORCE)
 set(DILIGENT_NO_FORMATTING ON CACHE BOOL "Disable clang-format" FORCE)
+set(DILIGENT_NO_FORMAT_VALIDATION ON CACHE BOOL "Disable format validation script" FORCE)
 
 FetchContent_Declare(
     DiligentCore
@@ -395,8 +396,8 @@ add_custom_target(
 
 add_custom_target(
     check_blueprint_consistency
-    COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/ci/check_blueprint_consistency.py" "${CMAKE_SOURCE_DIR}"
-    COMMENT "Verifying blueprint consistency and requirements traceability..."
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/_blueprint/tools/compose_validate.py"
+    COMMENT "Verifying blueprint consistency and requirements traceability (compose_validate)..."
     VERBATIM
 )
 

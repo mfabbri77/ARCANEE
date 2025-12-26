@@ -1,244 +1,221 @@
-<!-- cmake_playbook.md -->
+<!-- _blueprint/knowledge/cmake_playbook.md -->
 
 # CMake Playbook (Normative)
+This document defines a consistent, production-grade **CMake strategy** for native C++ apps/libraries.  
+It is intended to be used by Blueprints and AI coding agents to produce repositories that build cleanly across platforms with predictable options and quality gates.
 
-This playbook defines **standard CMake practices**, presets requirements, target conventions, and reproducibility expectations for repositories governed by the DET CDD blueprint system.
-
-It is **normative** unless superseded by a higher-precedence rule via DEC + enforcement.
-
----
-
-## 1. Goals
-
-- Deterministic, reproducible builds across ubuntu/windows/macos.
-- Single-source configuration via `CMakePresets.json`.
-- Minimal “it works on my machine” variance.
-- Clear mapping from components to targets.
-- CI and local development share the same commands.
+> **Precedence:** Prompt hard rules → `blueprint_schema.md` → this playbook → project-specific constraints.
 
 ---
 
-## 2. Baseline requirements (MUST)
-
-### 2.1 Minimum CMake version
-
-- The project MUST pin a minimum CMake version in `CMakeLists.txt`.
-- Default: **CMake 3.28+** unless constraints require older (DEC required).
-
-### 2.2 Language standard
-
-- Default: **C++20**.
-- MUST set `CMAKE_CXX_STANDARD` and `CMAKE_CXX_STANDARD_REQUIRED ON`.
-- Deviations (C++17 or C++23) require DEC and CI confirmation across platforms.
-
-### 2.3 Out-of-source builds
-
-- MUST support out-of-source builds.
-- In-source builds SHOULD be discouraged (optional guard).
-
-### 2.4 Presets required (XPLAT-02)
-
-- `CMakePresets.json` is REQUIRED.
-- Presets MUST cover configure/build/test for:
-  - linux
-  - windows
-  - macos
-- Presets MUST include CI-oriented presets:
-  - `ci-linux`, `ci-windows`, `ci-macos` (or equivalent naming, DEC if different)
-
-### 2.5 Deterministic flags and hygiene
-
-Builds MUST be deterministic under identical inputs:
-- pin generator (Ninja recommended; MSBuild allowed via Windows presets)
-- avoid embedding timestamps unless explicitly controlled
-- use consistent warning levels per compiler
+## 1) Core Principles
+1) **Targets-first:** everything is a target; no global include dirs/flags unless justified.  
+2) **Options are explicit:** every toggle is an option with a default and documentation.  
+3) **Presets are canonical:** developers use `CMakePresets.json`; CI uses presets too.  
+4) **Exportable:** libraries support `install()` + `export()` (unless explicitly N/A).  
+5) **Quality gates are enforceable:** format/lint/sanitizers/tests and `check_no_temp_dbg` are build targets.
 
 ---
 
-## 3. Project structure pattern (recommended)
-
-Suggested structure:
-
-- root `CMakeLists.txt` declares project, options, global settings
-- `/src` contains per-module CMakeLists or is added via target_sources
-- `/tests` contains test CMakeLists
-
-Use:
-- `add_library(lib_core ...)`
-- `add_executable(app_...)`, `add_executable(tool_...)`, etc.
-
----
-
-## 4. Required CMake options (MUST)
-
-Projects MUST provide these cache options (project prefix is required, see repo_layout_and_targets.md):
-
-- `<PROJ>_BUILD_TESTS` (default ON in CI; MAY default OFF locally)
-- `<PROJ>_BUILD_EXAMPLES` (default OFF)
-- `<PROJ>_ENABLE_SANITIZERS` (default OFF; CI enables as needed)
-- `<PROJ>_ENABLE_WARNINGS_AS_ERRORS` (default ON in CI)
-- `<PROJ>_ENABLE_LTO` (default OFF; optional)
-
-The project prefix MUST be derived from `project(<name>)` and documented in Ch7.
-
----
-
-## 5. Compiler warnings and errors (normative)
-
-### 5.1 Warning levels
-
-The project MUST set strict warnings per compiler:
-
-- GCC/Clang: `-Wall -Wextra -Wpedantic`
-- MSVC: `/W4`
-
-Additional recommended warnings may be added, but avoid toolchain-breaking noise.
-
-### 5.2 Warnings-as-errors
-
-- In CI, warnings-as-errors MUST be enabled unless DEC says otherwise.
-- Locally, it MAY be optional but should match CI by default.
-
----
-
-## 6. Sanitizers and instrumentation (normative)
-
-### 6.1 Linux/macOS
-
-If `<PROJ>_ENABLE_SANITIZERS=ON`:
-- Use:
-  - AddressSanitizer (ASan)
-  - UndefinedBehaviorSanitizer (UBSan)
-- TSan SHOULD be available via a separate preset or option if feasible.
-
-### 6.2 Windows
-
-Windows sanitizer support is toolchain-dependent:
-- Prefer Windows ASan if supported.
-- Otherwise, use MSVC `/analyze` or clang-tidy as a substitute.
-- Any limitation MUST be recorded as DEC, and CI MUST have an analysis job.
-
----
-
-## 7. Testing integration (normative)
-
-### 7.1 CTest integration required
-
-- The project MUST use `enable_testing()` and register tests with `add_test()`, OR provide an equivalent `test_all` target (DEC required if not using CTest).
-- Prefer `ctest` invocation via presets.
-
-### 7.2 Test frameworks (defaults)
-
-Widely recognized defaults:
-- GoogleTest for unit/integration tests.
-- Catch2 is acceptable via DEC.
-
-Framework choice MUST comply with dependency policy.
-
----
-
-## 8. Exported targets and install rules (conditional)
-
-If the project builds libraries intended for consumption:
-- Define install rules:
-  - `install(TARGETS ...)`
-  - `install(DIRECTORY include/... )`
-- Provide CMake package config exports:
-  - `install(EXPORT ...)` and config files under `lib/cmake/<project>`
-
-If the project is not intended for installation, document via DEC.
-
----
-
-## 9. CMakePresets.json guidance (normative)
-
-### 9.1 Required preset types
-
-Presets MUST include:
-- configure presets per OS
-- build presets per OS
-- test presets per OS
-
-Example naming:
-- configure: `linux`, `windows`, `macos`
-- build: `linux`, `windows`, `macos`
-- test: `linux`, `windows`, `macos`
-- CI aggregates: `ci-linux`, `ci-windows`, `ci-macos`
-
-Naming may vary, but deviations require DEC and validator awareness.
-
-### 9.2 Generator defaults
-
-- Linux/macOS: Ninja recommended
-- Windows: Ninja or Visual Studio generator; MUST be pinned in preset
-- Use `binaryDir` to isolate build outputs per preset.
-
-### 9.3 Cache variables
-
-Presets SHOULD set:
-- `CMAKE_BUILD_TYPE` (for single-config generators)
-- options: `<PROJ>_BUILD_TESTS`, `<PROJ>_ENABLE_WARNINGS_AS_ERRORS`, etc.
-
-For multi-config generators (Visual Studio):
-- specify `configuration` in build/test presets.
-
----
-
-## 10. Reproducibility and environment reporting (recommended)
-
-CI SHOULD:
-- print compiler version
-- print CMake version
-- print generator
-- print host OS and architecture
-- archive `compile_commands.json` for debugging (optional)
-
----
-
-## 11. Required build commands (Ch7 linkage)
-
-Ch7 MUST document exact commands that CI runs, typically:
-- `cmake --preset ci-linux`
-- `cmake --build --preset ci-linux`
-- `ctest --preset ci-linux --output-on-failure`
-
-Similarly for windows/macos.
-
----
-
-## 12. Common anti-patterns (forbidden or discouraged)
-
-Forbidden (or strongly discouraged without DEC):
-- hard-coded absolute paths
-- downloading dependencies during configure/build (must be controlled by dependency policy)
-- non-deterministic code generation without pinned inputs
-- custom ad-hoc scripts replacing presets in CI
-
----
-
-## 13. Minimal example (informative)
-
-Root CMakeLists essentials:
-
-```cmake
-cmake_minimum_required(VERSION 3.28)
-project(myproj LANGUAGES CXX)
-
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-option(MYPROJ_BUILD_TESTS "Build tests" ON)
-option(MYPROJ_ENABLE_WARNINGS_AS_ERRORS "Treat warnings as errors" ON)
-
-add_library(lib_core)
-target_sources(lib_core PRIVATE src/core.cpp)
-target_include_directories(lib_core PUBLIC include)
+## 2) Repository Layout (Recommended)
+```
+/CMakeLists.txt
+/CMakePresets.json
+/cmake/                 # helper modules, toolchains, Find*.cmake if needed
+/include/<proj>/        # public headers
+/src/                   # private implementation
+/tests/                 # unit/integration tests
+/examples/              # optional
+/tools/                 # scripts: check_no_temp_dbg, tooling helpers
+/docs/                  # docs, changelog, migration
+/blueprint/             # specs (source-of-truth)
 ```
 
 ---
 
-## 14. Policy changes
+## 3) Targets & Naming (Normative)
+Use consistent names:
+- `<proj>`: main library target (static or shared)
+- `<proj>_obj`: optional object library for sharing compilation units
+- `<proj>_tests`: test binary (or multiple targets)
+- `<proj>_bench`: benchmark binary (optional)
+- `format`, `format_check`: formatting targets
+- `lint`: clang-tidy/cppcheck (optional but recommended)
+- `check_no_temp_dbg`: required gate target
 
-Changes to this playbook MUST be introduced via CR and MUST include:
-- validator updates if presets schema changes,
-- migration notes for existing projects.
+**Rule:** Public headers belong to `<proj>` and are installed/exported (unless app-only).
+
+---
+
+## 4) Build Types & Presets (Mandatory)
+### 4.1 Preset set (recommended minimum)
+- `dev` (Debug-like, fast iteration)
+- `release` (optimized shipping config)
+- `asan` (AddressSanitizer)
+- `ubsan` (UndefinedBehaviorSanitizer)
+- `tsan` (ThreadSanitizer, where supported)
+- `ci` (CI deterministic build, often Release + warnings-as-errors)
+
+### 4.2 Generator policy
+- Prefer **Ninja** for single-config builds (Linux/macOS/Windows).
+- For MSVC, Ninja + clang-cl or MSVC is acceptable; multi-config generators are allowed but must be codified.
+
+### 4.3 Toolchain policy
+Blueprint must specify:
+- compilers (clang/gcc/msvc)
+- standard library (libstdc++/libc++)
+- C++ standard (17/20/23)
+- Windows CRT policy (MD/MT)
+
+---
+
+## 5) Options (Standard Set)
+Provide these options (with documented defaults):
+- `PROJ_BUILD_TESTS` (ON in dev/ci, OFF in release packaging optional)
+- `PROJ_BUILD_EXAMPLES` (OFF by default)
+- `PROJ_BUILD_BENCH` (OFF by default)
+- `PROJ_ENABLE_WERROR` (ON in ci, OFF in dev by default)
+- `PROJ_ENABLE_LTO` (ON in release if supported)
+- `PROJ_ENABLE_SANITIZERS` (preset-controlled; avoid mixing)
+- `PROJ_ENABLE_PCH` (optional; default OFF unless proven helpful)
+- `PROJ_ENABLE_UNITY` (optional; default OFF)
+- `PROJ_INSTALL` (ON for libraries; OFF for app-only repos if desired)
+
+**Rule:** Presets should set these options; developers should rarely pass ad-hoc `-D` flags.
+
+---
+
+## 6) Compiler/Linker Flags (Guidelines)
+### 6.1 Warnings baseline
+- Enable a strong baseline for Clang/GCC (e.g., `-Wall -Wextra -Wpedantic`)
+- Add additional warnings carefully to avoid noise
+- MSVC: `/W4` (or `/W3` if ecosystem requires) and `/permissive-` where feasible
+
+### 6.2 Werror policy
+- Enforce warnings-as-errors in CI/release gating builds.
+- Allow local dev to disable werror for velocity.
+
+### 6.3 Optimization & debug info
+- `dev`: debug symbols ON; optimization modest/off as needed
+- `release`: `-O3` or equivalent; symbols policy defined (stripped vs separate debug symbols)
+
+### 6.4 LTO/IPO
+- Prefer LTO in `release` if it does not break toolchains.
+- If enabled, document link-time cost and CI implications.
+
+### 6.5 Visibility
+For libraries, prefer:
+- GCC/Clang: hidden visibility by default (documented in [API-XX]/[BUILD-XX])
+- Windows: explicit export macro usage
+
+---
+
+## 7) Sanitizers (Mandatory presets)
+### 7.1 Preset separation
+Do not combine sanitizers unless you explicitly know they are compatible.
+- `asan` + `ubsan` may be combined on some platforms; codify only if tested.
+- `tsan` is often incompatible with `asan`.
+
+### 7.2 Runtime config
+- Set `ASAN_OPTIONS`, `TSAN_OPTIONS`, `UBSAN_OPTIONS` in CI where needed.
+- Ensure the Blueprint defines “how to run” and expected failure modes.
+
+---
+
+## 8) Dependencies (vcpkg/conan) Integration
+Blueprint chooses **one** primary dependency manager (recommended):
+- vcpkg manifest mode (`vcpkg.json`) OR conan (`conanfile.py`/`conanfile.txt`)
+
+**Rules:**
+- Dependencies must be **pinned** (versions/overrides).
+- CI must cache dependency builds.
+- Exported package config must not leak private deps into public usage requirements.
+
+---
+
+## 9) Install/Export (Libraries)
+If producing a library:
+- Provide `install(TARGETS ...)` and `install(EXPORT ...)`
+- Install headers to `include/<proj>/`
+- Generate package config:
+  - `<proj>Config.cmake`, `<proj>Targets.cmake`
+- Optionally generate `<proj>ConfigVersion.cmake` for SemVer checks.
+
+**Rule:** Public vs private include dirs must be correct:
+- `target_include_directories(<proj> PUBLIC $<BUILD_INTERFACE:...> $<INSTALL_INTERFACE:...>)`
+
+---
+
+## 10) Tooling Targets (Quality Gates)
+### 10.1 Formatting
+- Provide `format` (applies clang-format) and `format_check` (fails if changes needed)
+- Codify the clang-format version expectation (or vendor a config file)
+
+### 10.2 Lint
+- `lint` target (clang-tidy) recommended
+- Avoid making lint “always on” in dev unless the project demands it; enforce in CI gate if feasible
+
+### 10.3 TEMP-DBG gate (Mandatory)
+- Implement `check_no_temp_dbg` target that runs `/tools/check_no_temp_dbg.*`
+- CI must run `check_no_temp_dbg` and fail on markers.
+
+### 10.4 Compile commands
+- Always enable `CMAKE_EXPORT_COMPILE_COMMANDS` in dev/ci presets for tooling.
+
+---
+
+## 11) Testing Integration
+- Use `CTest` (`enable_testing()` + `add_test(...)`)
+- Tests must run under sanitizer presets
+- Prefer fast unit tests in CI; heavier soak/stress can be separate jobs
+
+**Rule:** `ctest --output-on-failure` should be used in CI.
+
+---
+
+## 12) Packaging Notes (Optional)
+If shipping artifacts:
+- Define `install` + `cpack` policy only if needed
+- Keep packaging deterministic; do not embed machine-specific absolute paths
+- Version stamps should be controlled (e.g., from git tag, with a fallback)
+
+---
+
+## 13) Minimal Presets Skeleton (Reference)
+Below is a conceptual reference. Projects may adjust but must keep the preset names stable.
+
+```json
+{
+  "version": 6,
+  "configurePresets": [
+    { "name": "dev", "generator": "Ninja", "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "PROJ_BUILD_TESTS": "ON",
+        "PROJ_ENABLE_WERROR": "OFF"
+    }},
+    { "name": "release", "generator": "Ninja", "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "PROJ_BUILD_TESTS": "OFF",
+        "PROJ_ENABLE_LTO": "ON"
+    }}
+  ],
+  "buildPresets": [
+    { "name": "dev", "configurePreset": "dev" },
+    { "name": "release", "configurePreset": "release" }
+  ],
+  "testPresets": [
+    { "name": "dev", "configurePreset": "dev", "output": {"outputOnFailure": true} }
+  ]
+}
+```
+
+---
+
+## 14) Compliance Checklist
+- [ ] Presets exist: dev/release/asan/ubsan/tsan (as applicable)
+- [ ] Options standardized and set by presets
+- [ ] Library repos implement install/export correctly
+- [ ] `check_no_temp_dbg` target exists and is used by CI
+- [ ] `format_check` and tests are CI gates
+- [ ] Sanitizer presets are runnable and documented

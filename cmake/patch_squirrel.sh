@@ -9,6 +9,7 @@ sed -i '/^export(EXPORT/,/  )/s/^/#/' CMakeLists.txt
 sed -i '/^  install(EXPORT/,/    )/s/^/#/' CMakeLists.txt
 
 # Fix CMake deprecation warning
-sed -i 's/cmake_minimum_required(VERSION .*)/cmake_minimum_required(VERSION 3.10)/' CMakeLists.txt
+# Remove deprecated -gstabs flag
+find . -name "CMakeLists.txt" -exec sed -i 's/-gstabs//g' {} +
 
 
