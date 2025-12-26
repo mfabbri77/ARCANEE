@@ -10,6 +10,13 @@ add_library(arcanee_ide STATIC
     TimelineStore.cpp
     LspClient.cpp
     DapClient.cpp
+    # v0.3 Config System [CR-0044]
+    config/ConfigSchema.cpp
+    config/ConfigSystem.cpp
+    config/ThemeSystem.cpp
+    config/Keymap.cpp
+    # Platform Font Locator [REQ-92]
+    ../platform/FontLocator_linux.cpp
 )
 
 # Allow including "ide/..."
@@ -51,6 +58,7 @@ target_link_libraries(arcanee_ide PUBLIC
     # Dependencies
     tree-sitter
     tree-sitter-squirrel
+    tree-sitter-toml
     pcre2-8
     sqlite3
     libzstd_static
@@ -61,6 +69,12 @@ target_link_libraries(arcanee_ide PUBLIC
     Diligent-Imgui
     squirrel_static     # For ScriptEngine access in DapClient
 )
+
+# Link fontconfig if available [REQ-92]
+if(FONTCONFIG_FOUND)
+    target_include_directories(arcanee_ide PRIVATE ${FONTCONFIG_INCLUDE_DIRS})
+    target_link_libraries(arcanee_ide PRIVATE ${FONTCONFIG_LIBRARIES})
+endif()
 
 target_compile_features(arcanee_ide PUBLIC cxx_std_17)
 

@@ -265,6 +265,40 @@ if(NOT tree-sitter-squirrel_POPULATED)
     endif()
 endif()
 
+# tree-sitter-toml (Grammar) [BUILD-18] [REQ-94]
+FetchContent_Declare(
+    tree-sitter-toml
+    GIT_REPOSITORY https://github.com/tree-sitter-grammars/tree-sitter-toml.git
+    GIT_TAG        v0.6.0
+)
+FetchContent_GetProperties(tree-sitter-toml)
+if(NOT tree-sitter-toml_POPULATED)
+    FetchContent_Populate(tree-sitter-toml)
+    file(GLOB TS_TOML_SOURCES 
+        "${tree-sitter-toml_SOURCE_DIR}/src/parser.c"
+        "${tree-sitter-toml_SOURCE_DIR}/src/scanner.c"
+    )
+    add_library(tree-sitter-toml STATIC ${TS_TOML_SOURCES})
+    target_include_directories(tree-sitter-toml PUBLIC "${tree-sitter-toml_SOURCE_DIR}/src")
+    if(NOT MSVC)
+        target_compile_options(tree-sitter-toml PRIVATE -w)
+    endif()
+endif()
+
+# Fontconfig (optional on Linux) [BUILD-18] [DEC-72]
+if(UNIX AND NOT APPLE)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(FONTCONFIG fontconfig)
+        if(FONTCONFIG_FOUND)
+            message(STATUS "fontconfig found: ${FONTCONFIG_VERSION}")
+            add_compile_definitions(ARCANEE_HAS_FONTCONFIG)
+        else()
+            message(STATUS "fontconfig not found, using fallback font handling")
+        endif()
+    endif()
+endif()
+
 # PCRE2 (Regex)
 FetchContent_Declare(
     pcre2

@@ -5,6 +5,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
+#include <spdlog/spdlog.h>
+#include <thread>
+#include <toml++/toml.hpp>
 
 namespace arcanee::ide {
 
@@ -46,6 +50,58 @@ UIShell::UIShell(MainThreadQueue &queue) : m_queue(queue) {
 
   // Load tasks from project root (if available)
   m_taskRunner.LoadTasks(".");
+
+  // Initialize Config System [REQ-91]
+  config::ConfigSystemInit configInit;
+  configInit.post_to_main = [this](std::function<void()> fn) {
+    m_queue.Push(std::move(fn));
+  };
+  configInit.post_to_worker = [](std::function<void()> fn) {
+    // Simple async execution - in production use a thread pool
+    std::thread(std::move(fn)).detach();
+  };
+  configInit.apply_on_main = [this](config::ConfigSnapshotPtr snapshot) {
+    // Apply theme from config snapshot [REQ-93]
+    if (snapshot) {
+      m_themeSystem.ApplyFromSnapshot(*snapshot);
+      m_themeSystem.ApplyImGuiTheme();
+
+      // Check if fonts need to be updated [REQ-92]
+      if (m_fontLocator) {
+        bool editorChanged =
+            (snapshot->editor.font.family != m_currentEditorFont.family ||
+             snapshot->editor.font.size_px != m_currentEditorFont.size_px ||
+             snapshot->editor.font.weight != m_currentEditorFont.weight ||
+             snapshot->editor.font.style != m_currentEditorFont.style);
+        bool uiChanged =
+            (snapshot->gui.ui_font.family != m_currentUiFont.family ||
+             snapshot->gui.ui_font.size_px != m_currentUiFont.size_px);
+
+        if (editorChanged || uiChanged) {
+          m_fontNeedsRebuild = true;
+          m_currentEditorFont = snapshot->editor.font;
+          m_currentUiFont = snapshot->gui.ui_font;
+        }
+      }
+
+      spdlog::info("[UIShell] Theme applied from config");
+    }
+  };
+  m_configSystem = std::make_unique<config::ConfigSystem>(configInit);
+  m_configSystem->Initialize();
+
+  // Initialize Font Locator [REQ-92]
+  m_fontLocator = platform::CreateFontLocator();
+  if (m_fontLocator) {
+    spdlog::info("[UIShell] Font locator initialized");
+  }
+
+  // Wire DocumentSystem save listener to ConfigSystem for hot-apply [REQ-91]
+  m_documentSystem.AddSaveListener([this](const std::string &path) {
+    if (m_configSystem) {
+      m_configSystem->OnIdeSavedFile(path);
+    }
+  });
 }
 
 UIShell::~UIShell() {
@@ -61,9 +117,112 @@ Status UIShell::RegisterCommand(std::string_view name, CommandFn fn,
   return Status::Ok();
 }
 
+// Static method to load fonts before Diligent texture creation [REQ-92]
+void UIShell::LoadInitialFonts() {
+  // Create font locator
+  auto fontLocator = platform::CreateFontLocator();
+  if (!fontLocator) {
+    spdlog::warn("[UIShell] Font locator unavailable, using default font");
+    return;
+  }
+
+  // Parse config to get font settings
+  std::string configRoot = "./config";
+  std::string editorToml = configRoot + "/editor.toml";
+  std::string guiToml = configRoot + "/gui.toml";
+
+  config::FontSpec editorFont;
+  config::FontSpec uiFont;
+
+  // Parse editor.toml for editor font
+  try {
+    auto editorConfig = toml::parse_file(editorToml);
+    if (auto font = editorConfig["font"].as_table()) {
+      if (auto family = (*font)["family"].value<std::string>()) {
+        editorFont.family = *family;
+      }
+      if (auto size = (*font)["size_px"].value<double>()) {
+        editorFont.size_px = static_cast<float>(*size);
+      }
+    }
+    spdlog::info("[UIShell] Parsed editor font: {} ({}px)", editorFont.family,
+                 editorFont.size_px);
+  } catch (const std::exception &e) {
+    spdlog::debug("[UIShell] Could not parse editor.toml: {}", e.what());
+  }
+
+  // Parse gui.toml for UI font
+  try {
+    auto guiConfig = toml::parse_file(guiToml);
+    if (auto font = guiConfig["ui_font"].as_table()) {
+      if (auto family = (*font)["family"].value<std::string>()) {
+        uiFont.family = *family;
+      }
+      if (auto size = (*font)["size_px"].value<double>()) {
+        uiFont.size_px = static_cast<float>(*size);
+      }
+    }
+    spdlog::info("[UIShell] Parsed UI font: {} ({}px)", uiFont.family,
+                 uiFont.size_px);
+  } catch (const std::exception &e) {
+    spdlog::debug("[UIShell] Could not parse gui.toml: {}", e.what());
+  }
+
+  // Resolve font paths
+  ImGuiIO &io = ImGui::GetIO();
+  bool fontLoaded = false;
+
+  // Load editor font FIRST (becomes ImGui default, used for whole UI)
+  // This ensures font size changes are visible
+  if (!editorFont.family.empty() && editorFont.family != "monospace") {
+    std::string path = fontLocator->GetFontPath(
+        editorFont.family, editorFont.weight, editorFont.style);
+    if (!path.empty()) {
+      float size = editorFont.size_px > 0 ? editorFont.size_px : 14.0f;
+      if (io.Fonts->AddFontFromFileTTF(path.c_str(), size)) {
+        spdlog::info(
+            "[UIShell] Loaded editor font (default): {} ({}px) from {}",
+            editorFont.family, size, path);
+        fontLoaded = true;
+      }
+    }
+  }
+
+  // Load UI font second (can be used for specific UI elements with PushFont)
+  if (!uiFont.family.empty() && uiFont.family != "sans-serif") {
+    std::string path =
+        fontLocator->GetFontPath(uiFont.family, uiFont.weight, uiFont.style);
+    if (!path.empty()) {
+      float size = uiFont.size_px > 0 ? uiFont.size_px : 14.0f;
+      if (io.Fonts->AddFontFromFileTTF(path.c_str(), size)) {
+        spdlog::info("[UIShell] Loaded UI font: {} ({}px) from {}",
+                     uiFont.family, size, path);
+        fontLoaded = true;
+      }
+    }
+  }
+
+  if (!fontLoaded) {
+    spdlog::info("[UIShell] Using default ImGui font");
+    // Don't add default - ImGui will do it automatically
+  }
+}
+
 void UIShell::RenderFrame() {
   // 1. Drain Queue (Apply mutations)
   m_queue.DrainAll();
+
+  // 1a. Font hot-reload is complex with Diligent ImGui backend [REQ-92]
+  // The graphics backend must recreate the font atlas texture after
+  // Clear()/Build(). For now, log that font changes require restart.
+  if (m_fontNeedsRebuild && m_fontLocator) {
+    m_fontNeedsRebuild = false;
+    spdlog::info("[UIShell] Font configuration changed. Restart required for "
+                 "new fonts.");
+    // TODO: Implement proper font hot-reload with Diligent ImGui backend
+    // notification This requires calling the
+    // ImGuiImplDiligent_InvalidateDeviceObjects/CreateDeviceObjects
+  }
 
   // 1b. Global Debug Keybindings
   {
@@ -481,6 +640,42 @@ void UIShell::RenderDockspace() {
       ImGui::EndMenu();
     }
 
+    // === CONFIGURATION MENU === [REQ-95]
+    if (ImGui::BeginMenu("Configuration")) {
+      if (ImGui::MenuItem("Open Config Folder")) {
+        // Switch explorer to config root mode and open config folder
+        std::filesystem::path configPath =
+            std::filesystem::current_path() / "config";
+        if (!std::filesystem::exists(configPath)) {
+          std::filesystem::create_directories(configPath);
+        }
+        // Set config root mode and refresh explorer
+        m_configRootMode = true;
+        m_configRootPath = configPath.string();
+        m_showExplorer = true;
+      }
+
+      if (ImGui::MenuItem("New Config File...")) {
+        // Create missing config files with defaults
+        std::filesystem::path configPath =
+            std::filesystem::current_path() / "config";
+        if (!std::filesystem::exists(configPath)) {
+          std::filesystem::create_directories(configPath);
+        }
+        // The config files should already exist from our implementation
+        // This is a placeholder for a dialog to create custom config files
+      }
+
+      ImGui::Separator();
+
+      if (m_configRootMode && ImGui::MenuItem("Return to Project")) {
+        m_configRootMode = false;
+        m_configRootPath.clear();
+      }
+
+      ImGui::EndMenu();
+    }
+
     ImGui::EndMenuBar();
   }
 
@@ -519,24 +714,49 @@ void DrawTree(const FileNode &node,
 }
 
 void UIShell::RenderPanes() {
-  // Project Explorer (only shown when a project is open)
-  if (m_showExplorer && m_projectSystem.HasProject()) {
+  // Project Explorer - handles both project and config root modes [DEC-66]
+  if (m_showExplorer) {
     if (ImGui::Begin("Project Explorer")) {
-      ImGui::Text("Root: %s", m_projectSystem.GetRoot().name.c_str());
-      ImGui::Separator();
-      DrawTree(m_projectSystem.GetRoot(), [this](const std::string &path) {
-        Document *doc = nullptr;
-        m_documentSystem.OpenDocument(path, &doc);
-        if (doc)
-          m_documentSystem.SetActiveDocument(doc);
-      });
-    }
-    ImGui::End();
-  } else if (m_showExplorer) {
-    // Show placeholder when no project is open
-    if (ImGui::Begin("Project Explorer")) {
-      ImGui::TextWrapped("No folder opened.");
-      ImGui::TextWrapped("Use File > Open Folder to open a project.");
+      // Config Root Mode [REQ-95]
+      if (m_configRootMode && !m_configRootPath.empty()) {
+        ImGui::TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), "Config Folder");
+        ImGui::Text("Path: %s", m_configRootPath.c_str());
+        ImGui::Separator();
+
+        // List config files
+        std::filesystem::path configDir(m_configRootPath);
+        if (std::filesystem::exists(configDir) &&
+            std::filesystem::is_directory(configDir)) {
+          for (const auto &entry :
+               std::filesystem::directory_iterator(configDir)) {
+            if (entry.is_regular_file()) {
+              std::string filename = entry.path().filename().string();
+              if (ImGui::Selectable(filename.c_str())) {
+                Document *doc = nullptr;
+                m_documentSystem.OpenDocument(entry.path().string(), &doc);
+                if (doc)
+                  m_documentSystem.SetActiveDocument(doc);
+              }
+            }
+          }
+        }
+      }
+      // Project Root Mode (normal)
+      else if (m_projectSystem.HasProject()) {
+        ImGui::Text("Root: %s", m_projectSystem.GetRoot().name.c_str());
+        ImGui::Separator();
+        DrawTree(m_projectSystem.GetRoot(), [this](const std::string &path) {
+          Document *doc = nullptr;
+          m_documentSystem.OpenDocument(path, &doc);
+          if (doc)
+            m_documentSystem.SetActiveDocument(doc);
+        });
+      }
+      // No project open
+      else {
+        ImGui::TextWrapped("No folder opened.");
+        ImGui::TextWrapped("Use File > Open Folder to open a project.");
+      }
     }
     ImGui::End();
   }
@@ -799,6 +1019,42 @@ void UIShell::RenderPanes() {
         bool ctrl = io.KeyCtrl;
         bool shift = io.KeyShift;
 
+        // Mouse Click to Position Cursor
+        if (ImGui::IsMouseClicked(0) && ImGui::IsWindowHovered()) {
+          ImVec2 mousePos = ImGui::GetMousePos();
+          ImVec2 winPos = ImGui::GetWindowPos();
+          float scrollY = ImGui::GetScrollY();
+          float scrollX = ImGui::GetScrollX();
+
+          // Calculate clicked line
+          float relY = mousePos.y - winPos.y + scrollY;
+          int clickedLine = (int)(relY / lineHeight);
+          clickedLine = std::max(0, std::min(clickedLine, totalLines - 1));
+
+          // Calculate clicked column
+          float relX = mousePos.x - winPos.x + scrollX - gutterWidth;
+          std::string lineText = buffer.GetLine(clickedLine);
+          int clickedCol = 0;
+          float accWidth = 0;
+          for (size_t i = 0; i < lineText.size(); ++i) {
+            float charWidth =
+                ImGui::CalcTextSize(lineText.substr(i, 1).c_str()).x;
+            if (accWidth + charWidth / 2 > relX)
+              break;
+            accWidth += charWidth;
+            clickedCol = i + 1;
+          }
+
+          uint32_t newPos = buffer.GetLineStart(clickedLine) + clickedCol;
+          if (shift && !cursors.empty()) {
+            Cursor c = cursors[0];
+            c.head = newPos;
+            buffer.SetCursors({c});
+          } else {
+            buffer.SetCursor(newPos);
+          }
+        }
+
         if (!io.InputQueueCharacters.empty())
           buffer.BeginBatch();
 
@@ -951,6 +1207,51 @@ void UIShell::RenderPanes() {
               buffer.SetCursors(newCs);
             } else {
               buffer.SetCursor(pos);
+            }
+          }
+        }
+        // Up Arrow Navigation
+        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
+          if (!cursors.empty()) {
+            int curLine = buffer.GetLineFromOffset(cursors[0].head);
+            if (curLine > 0) {
+              uint32_t curLineStart = buffer.GetLineStart(curLine);
+              int col = cursors[0].head - curLineStart;
+              uint32_t prevLineStart = buffer.GetLineStart(curLine - 1);
+              std::string prevLine = buffer.GetLine(curLine - 1);
+              int newCol = std::min(col, (int)prevLine.size());
+              uint32_t newPos = prevLineStart + newCol;
+
+              if (shift) {
+                Cursor c = cursors[0];
+                c.head = newPos;
+                buffer.SetCursors({c});
+              } else {
+                buffer.SetCursor(newPos);
+              }
+            }
+          }
+        }
+        // Down Arrow Navigation
+        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
+          if (!cursors.empty()) {
+            int curLine = buffer.GetLineFromOffset(cursors[0].head);
+            int totalLines = buffer.GetLineCount();
+            if (curLine < totalLines - 1) {
+              uint32_t curLineStart = buffer.GetLineStart(curLine);
+              int col = cursors[0].head - curLineStart;
+              uint32_t nextLineStart = buffer.GetLineStart(curLine + 1);
+              std::string nextLine = buffer.GetLine(curLine + 1);
+              int newCol = std::min(col, (int)nextLine.size());
+              uint32_t newPos = nextLineStart + newCol;
+
+              if (shift) {
+                Cursor c = cursors[0];
+                c.head = newPos;
+                buffer.SetCursors({c});
+              } else {
+                buffer.SetCursor(newPos);
+              }
             }
           }
         }

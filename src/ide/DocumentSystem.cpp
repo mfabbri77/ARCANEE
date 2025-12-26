@@ -70,7 +70,18 @@ Status DocumentSystem::SaveDocument(Document *doc) {
   file.write(content.c_str(), content.size());
   doc->dirty = false;
 
+  // Notify save listeners [REQ-91]
+  NotifySaveListeners(doc->path);
+
   return Status::Ok();
+}
+
+void DocumentSystem::NotifySaveListeners(const std::string &path) {
+  for (const auto &listener : m_saveListeners) {
+    if (listener) {
+      listener(path);
+    }
+  }
 }
 
 void DocumentSystem::CloseDocument(Document *doc) {

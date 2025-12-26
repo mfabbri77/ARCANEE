@@ -74,6 +74,11 @@ bool Workbench::initialize(render::RenderDevice *device,
   // Initialize ImGui IO
   ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
+#ifdef ARCANEE_ENABLE_IDE
+  // Load custom fonts before Diligent creates texture [REQ-92]
+  ide::UIShell::LoadInitialFonts();
+#endif
+
   // Create ImGui Diligent Implementation
   // NOTE: We render ImGui directly to swapchain (no depth buffer), so we
   // must set depth format to UNKNOWN.

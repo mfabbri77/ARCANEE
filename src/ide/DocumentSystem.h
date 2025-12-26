@@ -1,6 +1,7 @@
 #pragma once
 #include "TextBuffer.h"
 #include "common/Status.h"
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -15,6 +16,9 @@ struct Document {
   // Helper accessors
   std::string filename() const;
 };
+
+// Save listener callback type [REQ-91]
+using SaveListener = std::function<void(const std::string &absolute_path)>;
 
 class DocumentSystem {
 public:
@@ -38,11 +42,20 @@ public:
     return m_documents;
   }
 
+  // Save listener management [REQ-91]
+  void AddSaveListener(SaveListener listener) {
+    m_saveListeners.push_back(std::move(listener));
+  }
+
+  void ClearSaveListeners() { m_saveListeners.clear(); }
+
 private:
   std::vector<std::unique_ptr<Document>> m_documents;
   Document *m_activeDoc = nullptr;
+  std::vector<SaveListener> m_saveListeners;
 
   Document *FindDocument(const std::string &path);
+  void NotifySaveListeners(const std::string &path);
 };
 
 } // namespace arcanee::ide

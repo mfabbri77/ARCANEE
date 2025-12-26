@@ -1,0 +1,60 @@
+# ARCANEE Color Schemes [REQ-90]
+# This file defines color schemes for the IDE.
+# Users can modify this file; changes apply on save (hot-apply).
+
+[[scheme]]
+id = "ayu-mirage"
+name = "Ayu Mirage"
+variant = "dark"
+
+[scheme.editor]
+background = "#1F2430"
+foreground = "#CBCCC6"
+caret      = "#FFCC66"
+selection  = "#33415E"
+line_highlight = "#232A3A"
+gutter_background = "#1F2430"
+gutter_foreground = "#707A8C"
+
+[scheme.syntax]
+comment  = "#707A8C"
+string   = "#BAE67E"
+number   = "#D4BFFF"
+keyword  = "#FFAD66"
+type     = "#73D0FF"
+function = "#FFD173"
+variable = "#CBCCC6"
+operator = "#F29E74"
+error    = "#FF6666"
+
+# Optional GUI overrides; if absent, derived from editor colors [DEC-63]
+[scheme.gui]
+window_bg = "#1F2430"
+text      = "#CBCCC6"
+accent    = "#FFCC66"
+
+
+[[scheme]]
+id = "ayu-light"
+name = "Ayu Light"
+variant = "light"
+
+[scheme.editor]
+background = "#FAFAFA"
+foreground = "#5C6166"
+caret      = "#FF9940"
+selection  = "#D1E4F4"
+line_highlight = "#EEF0F1"
+gutter_background = "#FAFAFA"
+gutter_foreground = "#9DA2A6"
+
+[scheme.syntax]
+comment  = "#787B80"
+string   = "#86B300"
+number   = "#A37ACC"
+keyword  = "#FA8D3E"
+type     = "#399EE6"
+function = "#F2AE49"
+variable = "#5C6166"
+operator = "#ED9366"
+error    = "#F51818"

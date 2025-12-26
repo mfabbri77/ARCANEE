@@ -15,6 +15,9 @@
 #include "SearchService.h"
 #include "TaskRunner.h"
 #include "TimelineStore.h"
+#include "config/ConfigSystem.h"
+#include "config/ThemeSystem.h"
+#include "platform/FontLocator.h"
 
 namespace arcanee::script {
 class ScriptEngine; // Forward declaration
@@ -61,6 +64,10 @@ public:
 
   // Render the entire IDE frame (Dockspace + Panes)
   void RenderFrame();
+
+  // Load fonts before Diligent creates texture - call after
+  // ImGui::CreateContext but before ImGuiImplDiligent initialization [REQ-92]
+  static void LoadInitialFonts();
 
   // Accessor
   MainThreadQueue &Queue() { return m_queue; }
@@ -184,12 +191,28 @@ private:
   bool m_showLocalHistory = false;
   bool m_showPreview = true; // Preview pane on right
 
+  // Config root mode [REQ-95], [DEC-66]
+  bool m_configRootMode = false;
+  std::string m_configRootPath;
+
   TaskRunner m_taskRunner;
   int m_selectedTaskIndex = -1;
 
   TimelineStore m_timelineStore;
   DapClient m_dapClient;
   LspClient m_lspClient;
+
+  // Config System [REQ-91], [REQ-95]
+  std::unique_ptr<config::ConfigSystem> m_configSystem;
+
+  // Theme System [REQ-93]
+  config::ThemeSystem m_themeSystem;
+
+  // Font Locator [REQ-92]
+  std::unique_ptr<platform::FontLocator> m_fontLocator;
+  bool m_fontNeedsRebuild = true;
+  config::FontSpec m_currentEditorFont;
+  config::FontSpec m_currentUiFont;
 };
 
 } // namespace arcanee::ide

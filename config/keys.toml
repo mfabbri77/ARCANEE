@@ -1,0 +1,51 @@
+# ARCANEE Keybindings Configuration [REQ-90], [REQ-96]
+# This file defines keyboard shortcuts for IDE actions.
+# Changes apply on save (hot-apply). [REQ-91]
+#
+# Modifier keys:
+#   primary - Ctrl on Windows/Linux, Cmd on macOS
+#   Ctrl, Alt, Shift, Cmd - Platform-specific modifiers
+#
+# Format: "action.id" = ["chord1", "chord2", ...]
+# Conflicts: Last definition wins with a warning diagnostic.
+
+[keys]
+# File operations
+"file.save" = ["primary+S"]
+"file.save_all" = ["primary+Shift+S"]
+"file.open" = ["primary+O"]
+"file.new" = ["primary+N"]
+
+# Edit operations
+"editor.undo" = ["primary+Z"]
+"editor.redo" = ["primary+Y", "primary+Shift+Z"]
+"editor.copy" = ["primary+C"]
+"editor.cut" = ["primary+X"]
+"editor.paste" = ["primary+V"]
+"editor.select_all" = ["primary+A"]
+"editor.find" = ["primary+F"]
+"editor.find_replace" = ["primary+H"]
+
+# Navigation
+"editor.goto_line" = ["primary+G"]
+"editor.goto_definition" = ["F12"]
+"editor.peek_definition" = ["Alt+F12"]
+
+# View
+"view.command_palette" = ["primary+Shift+P", "primary+P"]
+"view.search_files" = ["primary+Shift+F"]
+"view.toggle_sidebar" = ["primary+B"]
+"view.toggle_terminal" = ["primary+`"]
+
+# Debug operations
+"debug.start" = ["F5"]
+"debug.stop" = ["Shift+F5"]
+"debug.pause" = ["F6"]
+"debug.step_over" = ["F10"]
+"debug.step_into" = ["F11"]
+"debug.step_out" = ["Shift+F11"]
+"debug.toggle_breakpoint" = ["F9"]
+
+# Run operations
+"run.start" = ["primary+R"]
+"run.restart" = ["primary+Shift+R"]

@@ -1,0 +1,42 @@
+# ARCANEE Editor Configuration [REQ-90]
+# This file controls editor behavior and appearance.
+# Changes apply on save (hot-apply). [REQ-91]
+
+# Active color scheme - must match an id from color-schemes.toml
+[color_scheme]
+active = "ayu-mirage"
+
+# Editor font settings [REQ-92]
+# Fonts are resolved from system-installed fonts only (no file paths).
+[font]
+family = "JetBrains Mono"
+size_px = 20
+weight = "Regular"   # Light | Regular | Medium | SemiBold | Bold
+style = "Normal"     # Normal | Italic
+line_height = 1.1
+ligatures = true
+
+# Indentation settings
+[indent]
+type = "spaces"      # spaces | tabs
+width = 2
+tab_width = 2
+detect = false       # Auto-detect from file content
+
+# View settings
+[view]
+line_numbers = true
+highlight_current_line = true
+
+# Cursor settings
+[cursor]
+blink = true
+blink_rate_ms = 530
+
+# Whitespace rendering
+[whitespace]
+render = "boundary"  # none | boundary | all
+
+# End-of-line markers
+[eol]
+render = false
